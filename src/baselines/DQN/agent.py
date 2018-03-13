@@ -43,7 +43,7 @@ class Agent(base.Agent):
 
     def learn(self, env, max_iter, batch_size):
         learn_counter = 0
-        for i_episode in range(max_iter):
+        for i_episode in xrange(max_iter):
             s = env.reset()
             e_reward = 0
             done = False
@@ -53,26 +53,26 @@ class Agent(base.Agent):
                 s_, r, done, info = env.step(a)
                 self._replay_module.add(tuple((s, [a], [r], s_)))
                 e_reward += r
-                if len(self._replay_module) == self._replay_module.size:
-                    # update target q network
-                    if learn_counter % self.target_replace_iter == 0:
-                        self._target_q.load_state_dict(self._q.state_dict())
-                    learn_counter += 1
 
-                    # sample batch transitions
-                    b_s, b_a, b_r, b_s_ = self._replay_module.sample(batch_size)
-                    b_s, b_r, b_s_ = map(torch.FloatTensor, [b_s, b_r, b_s_])
-                    b_a = torch.LongTensor(b_a)
-                    b_s, b_a, b_r, b_s_ = map(Variable, [b_s, b_a, b_r, b_s_])
+                # update target q network
+                if learn_counter % self.target_replace_iter == 0:
+                    self._target_q.load_state_dict(self._q.state_dict())
+                learn_counter += 1
 
-                    # update parameters
-                    q_eval = self._q(b_s).gather(1, b_a)  # shape (batch, 1)
-                    q_next = self._target_q(b_s_).detach()  # detach from graph, don't backpropagate
-                    q_target = b_r + self.reward_gamma * q_next.max(1)[0].view(batch_size, 1)  # shape (batch, 1)
-                    loss = self.loss(q_eval, q_target)
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
-                    if done:
-                        logger.info('Iter: {}, E_Reward: {}'.format(i_episode, round(e_reward, 2)))
+                # sample batch transitions
+                b_s, b_a, b_r, b_s_ = self._replay_module.sample(batch_size)
+                b_s, b_r, b_s_ = map(torch.FloatTensor, [b_s, b_r, b_s_])
+                b_a = torch.LongTensor(b_a)
+                b_s, b_a, b_r, b_s_ = map(Variable, [b_s, b_a, b_r, b_s_])
+
+                # update parameters
+                q_eval = self._q(b_s).gather(1, b_a)  # shape (batch, 1)
+                q_next = self._target_q(b_s_).detach()  # detach from graph, don't backpropagate
+                q_target = b_r + self.reward_gamma * q_next.max(1)[0].view(batch_size, 1)  # shape (batch, 1)
+                loss = self.loss(q_eval, q_target)
+                self.optimizer.zero_grad()
+                loss.backward()
+                self.optimizer.step()
+                if done:
+                    logger.info('Iter: {}, E_Reward: {}'.format(i_episode, round(e_reward, 2)))
                 s = s_
