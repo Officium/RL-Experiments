@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import math
 import copy
 
 import numpy
@@ -13,7 +12,7 @@ logger = get_logger()
 
 
 class Agent(base.Agent):
-    def __init__(self, policy, value, accept_ratio, reward_gamma=0.9):
+    def __init__(self, policy, value, accept_ratio=0.9, reward_gamma=0.9):
         self._policy = policy
         self._value = value
         self.accept_ratio = accept_ratio
@@ -22,35 +21,8 @@ class Agent(base.Agent):
     def act(self, state, step=None, noise=None):
         state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0), requires_grad=True)
         prob = self._policy(state)
-        action = prob.multinomial(1)
+        action = prob.multinomial(1).data.numpy()[0, 0]
         return action, prob
-
-    def sample_trajectories(self, env, episodes):
-        trajectories = []
-        i_episodes = 0
-        entropy = 0
-        rewards = 0
-        while i_episodes < episodes:
-            i_episodes += 1
-            s = env.reset()
-            data = []
-            while True:
-                a, p = self.act(s)
-                entropy += -(p * p.log()).sum()
-                s_, r, done, info = env.step(a.data[0, 0])
-                rewards += r
-                data.append(tuple((s, a, r, p)))
-                if done:
-                    trajectories.append([None] * len(data))
-                    trajectories[-1][-1] = data[-1]
-                    for i in reversed(xrange(len(data)-1)):
-                        trajectories[-1][i] = tuple((data[i][0], data[i][1],
-                                                     data[i][2] + self.reward_gamma * data[i+1][2], data[i][3]))
-                    break
-                s = s_
-        rewards /= episodes
-        entropy /= len(trajectories)
-        return trajectories, rewards, entropy
 
     def loss(self, state_dict, b_s, b_a, advantage):
         prob_old = self._policy(b_s).gather(1, b_a).data
@@ -61,13 +33,36 @@ class Agent(base.Agent):
 
     def learn(self, env, max_iter, batch_size, sample_episodes):
         for i_episode in xrange(max_iter):
-            trajectories, rewards, entropy = self.sample_trajectories(env, sample_episodes)
-            for trajectory in numpy.array_split(trajectories, math.ceil(len(trajectories) * 1.0 / batch_size)):
-                b_s = Variable(torch.Tensor([x[0] for x in trajectory]))
-                b_r = torch.Tensor([[x[1]] for x in trajectory])
-                b_a = torch.Tensor([x[2] for x in trajectory])
-                b_p = torch.Tensor([x[3] for x in trajectory])
+            # sample trajectories
+            trajectories = [[], [], [], []]  # s, a, r, p
+            for _ in xrange(sample_episodes):
+                s = env.reset()
+                i_episode = 0
+                done = False
+                while not done:
+                    i_episode += 1
+                    a, p = self.act(s)
+                    s_, r, done, info = env.step(a)
+                    trajectories[0].append(s)
+                    trajectories[1].append([a])
+                    trajectories[2].append([r])
+                    trajectories[3].append(p)
+                    s = s_
+                for i in xrange(1, i_episode):
+                    trajectories[2][-i-1][0] += trajectories[2][-i][0] * self.reward_gamma
+            entropy = -sum((p * p.log()).sum() for p in trajectories[3]) / len(trajectories[3])
 
-                baseline = self._value.forward(b_s).data
+            # batch training
+            for index in range(0, len(trajectories[0]), batch_size):
+                b_s, b_r, b_a, b_p = (trajectories[i][index:index+batch_size] for i in xrange(4))
+                b_s, b_r = map(torch.FloatTensor, [b_s, b_r])
+                b_a = torch.LongTensor(b_a)
+                baseline = self._value.forward(Variable(b_s)).data
                 advantage = b_r - baseline
                 advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+
+                # update value
+                pass
+
+                # update policy
+                pass
