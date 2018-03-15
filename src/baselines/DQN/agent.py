@@ -43,7 +43,7 @@ class Agent(base.Agent):
 
     def learn(self, env, max_iter, batch_size):
         learn_counter = 0
-        for i_episode in xrange(max_iter):
+        for i_iter in xrange(max_iter):
             s = env.reset()
             e_reward = 0
             done = False
@@ -73,6 +73,5 @@ class Agent(base.Agent):
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                if done:
-                    logger.info('Iter: {}, E_Reward: {}'.format(i_episode, round(e_reward, 2)))
                 s = s_
+            logger.info('Iter: {}, E_Reward: {}'.format(i_iter, round(e_reward, 2)))

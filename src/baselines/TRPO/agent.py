@@ -32,15 +32,15 @@ class Agent(base.Agent):
         return -torch.mean((prob_new / (prob_old + 1e-8)) * advantage)
 
     def learn(self, env, max_iter, batch_size, sample_episodes):
-        for i_episode in xrange(max_iter):
+        for i_iter in xrange(max_iter):
             # sample trajectories
             trajectories = [[], [], [], []]  # s, a, r, p
             for _ in xrange(sample_episodes):
                 s = env.reset()
-                i_episode = 0
+                episode_len = 0
                 done = False
                 while not done:
-                    i_episode += 1
+                    episode_len += 1
                     a, p = self.act(s)
                     s_, r, done, info = env.step(a)
                     trajectories[0].append(s)
@@ -48,7 +48,7 @@ class Agent(base.Agent):
                     trajectories[2].append([r])
                     trajectories[3].append(p)
                     s = s_
-                for i in xrange(1, i_episode):
+                for i in xrange(1, episode_len):
                     trajectories[2][-i-1][0] += trajectories[2][-i][0] * self.reward_gamma
             entropy = -sum((p * p.log()).sum() for p in trajectories[3]) / len(trajectories[3])
 
