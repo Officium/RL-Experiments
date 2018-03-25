@@ -37,9 +37,15 @@ class Policy(nn.Module):
         actions_prob = self.softmax(self.out(x))
         return actions_prob
 
+    def get_kl(self, b_s):  # a discrete version
+        prob_new = self.forward(b_s)
+        prob_old = prob_new.detach()
+        kl = prob_old * torch.log(prob_old / prob_new)
+        return kl.shape[1] * kl.mean()
+
 
 env = gym.make('CartPole-v0')
 policy = Policy(env.observation_space.shape[0], env.action_space.n)
 value = Value(env.observation_space.shape[0])
 agent = TRPO.Agent(policy, value, nn.MSELoss(), torch.optim.Adam(value.parameters(), lr=1e-2))
-agent.learn(env, 1, 10, 10)
+agent.learn(env, 200, 20, 10)

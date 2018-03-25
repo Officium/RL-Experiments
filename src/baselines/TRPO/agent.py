@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import copy
-import functools
+from functools import partial
 
 import numpy
 import torch
@@ -51,19 +51,12 @@ class Agent(base.Agent):
         action = prob.multinomial(1).data.numpy()[0, 0]
         return action, prob
 
-    def get_loss(self, theta, b_s, b_a, advantage):
-        # get surrogate loss
-        prob_old = self._policy(b_s).gather(1, b_a).data
-        new_model = copy.deepcopy(self._policy)
-        vector_to_parameters(theta, new_model.parameters())
-        prob_new = new_model(b_s).gather(1, b_a).data
-        return -torch.mean((prob_new / prob_old) * advantage)
-
     def learn(self, env, max_iter, batch_size, sample_episodes):
         for i_iter in xrange(max_iter):
             # sample trajectories using single path
             trajectories = [[], [], [], []]  # s, a, r, p
             for _ in xrange(sample_episodes):
+                # env.render()
                 s = env.reset()
                 episode_len = 0
                 done = False
@@ -78,16 +71,17 @@ class Agent(base.Agent):
                     s = s_
                 for i in xrange(1, episode_len):
                     trajectories[2][-i-1][0] += trajectories[2][-i][0] * self.reward_gamma
-            entropy = -sum((p * p.log()).sum() for p in trajectories[3]) / len(trajectories[3])
 
             # batch training
             for index in xrange(0, len(trajectories[0]), batch_size):
                 # load batch data
                 b_s, b_a, b_r, b_p = (trajectories[i][index:index+batch_size] for i in xrange(4))
                 b_s, b_r = map(torch.FloatTensor, [b_s, b_r])
+                b_p = torch.cat(b_p)
                 b_a = torch.LongTensor(b_a)
                 baseline = self._value.forward(Variable(b_s))
                 advantage = b_r - baseline.data
+                # This normalization is found in John's code. It is a way to stabilize the gradients during BP.
                 advantage = (advantage - advantage.mean()) / advantage.std()
 
                 # update value i.e. improve baseline
@@ -96,29 +90,46 @@ class Agent(base.Agent):
                 loss.backward()
                 self.optimizer.step()
 
-                # update policy using Fisher information matrix (Refer to section 3.12 of John's Ph.D thesis)
-                pg = None  # TODO
+                # update policy
+                new_probs = b_p.gather(1, Variable(b_a))  # use old probs as start point to search
+                old_probs = new_probs.detach()  # detach the old probs
+                obj = (Variable(advantage) * (new_probs / old_probs)).mean()  # the obj of eq16 in John's thesis page25
+                pg = self.flatten_grad(self._policy.parameters(), -obj).data
                 if numpy.allclose(pg, 0):
                     logger.warn("got zero gradient. not updating")
                 else:
-                    stepdir = self.cg(self.fisher_vector_product, -pg)
-                    shs = 0.5 * stepdir.dot(self.fisher_vector_product(stepdir))
+                    fvp = partial(self.fvp, b_s=Variable(b_s))
+                    stepdir = self.cg(fvp, -pg)
+                    shs = 0.5 * stepdir.dot(fvp(stepdir))
                     lm = numpy.sqrt(shs / self.max_kl)
-                    fullstep = stepdir / lm
-                    expected_improve_rate = -g.dot(stepdir) / lm
-                    loss_fun = functools.partial(self.get_loss, b_s=b_s, b_a=b_a, advantage=advantage)
+                    fullstep = Variable(stepdir / lm)
+                    expected_improve_rate = -pg.dot(stepdir) / lm
+                    loss_fun = partial(self.get_loss, b_s=Variable(b_s), b_a=Variable(b_a), advantage=advantage)
                     old_theta = parameters_to_vector(self._policy.parameters())
                     success, new_theta = self.line_search(loss_fun, old_theta, fullstep, expected_improve_rate)
-                    vector_to_parameters(new_theta, self._policy.parameters())
+                    if success:
+                        vector_to_parameters(new_theta, self._policy.parameters())
 
-    @staticmethod
-    def fisher_vector_product(vec):  # TODO
-        pass
+    def get_loss(self, theta, b_s, b_a, advantage):
+        # get surrogate loss
+        prob_old = self._policy(b_s).gather(1, b_a).data
+        new_model = copy.deepcopy(self._policy)
+        vector_to_parameters(theta, new_model.parameters())
+        prob_new = new_model(b_s).gather(1, b_a).data
+        return -(prob_new / prob_old * advantage).mean()
+
+    def fvp(self, v, b_s):
+        # first, calculate fisher information matrix of $ \bar{D}_KL(\theta_old, \theta) $
+        # see more in John's thesis section 3.12 page 40
+        grads = self.flatten_grad(self._policy.parameters(), self._policy.get_kl(b_s), create_graph=True)
+        grads = self.flatten_grad(self._policy.parameters(), (grads * Variable(v)).sum())
+        # for conjugate gradient, multiply v * cg_damping
+        return grads.data + v * self.cg_damping
 
     def cg(self, fvp, b):
-        p = b.copy()
-        r = b.copy()
-        x = numpy.zeros_like(b)
+        p = b.clone()
+        r = b.clone()
+        x = torch.zeros_like(b)
         rdotr = r.dot(r)
         for i in xrange(self.cg_iters):
             z = fvp(p)
@@ -144,3 +155,7 @@ class Agent(base.Agent):
                 if actual_improve / (stepfrac * expected_improve_rate) > self.accept_ratio:
                     return True, xi
         return False, x
+
+    @staticmethod
+    def flatten_grad(var, loss, **kwargs):
+        return torch.cat([g.contiguous().view(-1) for g in torch.autograd.grad(loss, var, **kwargs)])
