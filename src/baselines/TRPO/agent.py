@@ -17,6 +17,8 @@ class Agent(base.Agent):
     # [1] Schulman J. Optimizing Expectations: From Deep Reinforcement Learning to Stochastic Computation Graphs[D].
     #     UC Berkeley, 2016.
     # [2] https://github.com/joschu/modular_rl
+    # [3] Martens J, Sutskever I. Training deep and recurrent networks with hessian-free optimization[M]
+    #     Neural networks: Tricks of the trade. Springer, Berlin, Heidelberg, 2012: 479-535.
     def __init__(self, policy, value, loss, optimizer, accept_ratio=0.9, reward_gamma=0.9,
                  cg_iters=10, cg_tol=1e-10, cg_damping=1e-3, max_kl=1e-2, ls_iters=10):
         """
@@ -98,6 +100,7 @@ class Agent(base.Agent):
                 if numpy.allclose(pg, 0):
                     logger.warn("got zero gradient. not updating")
                 else:
+                    # [3]
                     fvp = partial(self.fvp, b_s=Variable(b_s))
                     stepdir = self.cg(fvp, -pg)
                     shs = 0.5 * stepdir.dot(fvp(stepdir))
