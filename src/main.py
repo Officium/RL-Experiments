@@ -2,3 +2,4 @@
 from baselines.DQN import demo
 from baselines.TRPO import demo
 from baselines.DDPG import demo
+from baselines.REINFORCE import demo

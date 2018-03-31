@@ -16,6 +16,7 @@ More comments for detail theory and tricks.
 * DQN
 * TRPO
 * DDPG
+* REINFORCE (Vanilla Policy Gradient)
 
 # Dependency
 > Tested in macOS 10.13
