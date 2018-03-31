@@ -11,6 +11,9 @@ logger = get_logger()
 
 
 class Agent(base.Agent):
+    # References:
+    # [1] Mnih V, Kavukcuoglu K, Silver D, et al. Human-level control through deep reinforcement learning[J].
+    #     Nature, 2015, 518(7540): 529.
     def __init__(self, q, target_q, replay_module, optimizer, loss,
                  target_replace_iter, greedy_epsilon=0.9, reward_gamma=0.9):
         """

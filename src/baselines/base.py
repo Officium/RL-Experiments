@@ -19,6 +19,10 @@ class Agent(object):
         """
         raise NotImplementedError("Must be implemented in subclass.")
 
+    @abc.abstractmethod
+    def learn(self, *args, **kwargs):
+        raise NotImplementedError("Must be implemented in subclass.")
+
 
 class ReplayBuffer(object):
     def __init__(self, size):
@@ -56,3 +60,11 @@ class ReplayBuffer(object):
             for i in xrange(n):
                 res[i].append(sample[i])
         return res
+
+
+class NoiseGenerator(object):
+    __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def generate(self):
+        raise NotImplementedError("Must be implemented in subclass.")
