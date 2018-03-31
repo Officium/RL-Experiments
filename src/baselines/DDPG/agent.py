@@ -28,6 +28,7 @@ class Agent(base.Agent):
             target_critic: target critic network
             optimizer_critic: optimizer of critic, e.g. torch.optim.Adam
             replay_module: replay buffer
+            noise_generator: random process for action exploration
             reward_gamma: reward discount
             tau: soft update parameter of target network, i.e. theta^target = /tau * theta + (1 - /tau) * theta^target
         """
@@ -52,6 +53,7 @@ class Agent(base.Agent):
     def learn(self, env, max_iter, batch_size):
         for i_iter in xrange(max_iter):
             s = env.reset()
+            self._noise_generator.reset()
             done = False
             e_reward = 0
             while not done:
@@ -71,8 +73,8 @@ class Agent(base.Agent):
 
                 # update critic
                 self._optimizer_critic.zero_grad()
-                yi = b_r + self.reward_gamma * self._target_critic.forward(b_s_, self._target_actor.forward(b_s_))
-                loss = nn.MSELoss()(self._critic.forward(b_s, b_a), yi)
+                y = b_r + self.reward_gamma * self._target_critic.forward(b_s_, self._target_actor.forward(b_s_))
+                loss = nn.MSELoss()(self._critic.forward(b_s, b_a), y)
                 loss.backward()
                 self._optimizer_critic.step()
 

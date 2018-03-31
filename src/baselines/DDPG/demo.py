@@ -55,7 +55,7 @@ class OrnsteinUhlenbeckActionNoise(NoiseGenerator):
         self.theta = theta
         self.dt = dt
         self.x0 = x0
-        self.x_prev = self.x0 if self.x0 is not None else np.zeros_like(self.mu)
+        self.x_prev = None
 
     def generate(self):
         x = self.x_prev + \
@@ -63,6 +63,9 @@ class OrnsteinUhlenbeckActionNoise(NoiseGenerator):
             self.sigma * np.sqrt(self.dt) * np.random.normal(size=self.size)
         self.x_prev = x
         return x
+
+    def reset(self):
+        self.x_prev = self.x0 if self.x0 is not None else np.zeros_like(self.mu)
 
     def __repr__(self):
         return 'OrnsteinUhlenbeckActionNoise(mu={}, sigma={})'.format(self.mu, self.sigma)
