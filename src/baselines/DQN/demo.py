@@ -27,6 +27,6 @@ class Net(nn.Module):
 env = gym.make('CartPole-v0')
 q = Net(env.observation_space.shape[0], env.action_space.n)
 target_q = copy.deepcopy(q)
-agent = DQN.Agent(q, target_q, base.ReplayBuffer(1000),
-                  torch.optim.Adam(q.parameters(), lr=1e-2), nn.MSELoss(), 100)
-agent.learn(env, 1000, 100)
+agent = DQN.Agent(q, target_q, base.ReplayBuffer(1000000),
+                  torch.optim.Adam(q.parameters(), lr=2.5e-4), nn.MSELoss(), 10000)
+agent.learn(env, 1000, 32)
