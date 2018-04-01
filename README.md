@@ -17,6 +17,7 @@ More comments for detail theory and tricks.
 * DDPG
 * DQN
 * TRPO
+* PPO
 
 # Dependency
 > Tested in macOS 10.13

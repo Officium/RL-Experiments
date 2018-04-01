@@ -57,15 +57,18 @@ class Agent(base.Agent):
         for i_iter in xrange(max_iter):
             # sample trajectories using single path
             trajectories = [[], [], [], []]  # s, a, r, p
+            e_reward = 0
             for _ in xrange(sample_episodes):
                 # env.render()
                 s = env.reset()
                 episode_len = 0
                 done = False
+                reward = 0.0
                 while not done:
                     episode_len += 1
                     a, p = self.act(s)
                     s_, r, done, info = env.step(a)
+                    reward += r
                     trajectories[0].append(s)
                     trajectories[1].append([a])
                     trajectories[2].append([r])
@@ -73,6 +76,8 @@ class Agent(base.Agent):
                     s = s_
                 for i in xrange(1, episode_len):
                     trajectories[2][-i-1][0] += trajectories[2][-i][0] * self.reward_gamma
+                e_reward += reward / episode_len
+            e_reward /= sample_episodes
 
             # batch training
             for index in xrange(0, len(trajectories[0]), batch_size):
@@ -112,6 +117,7 @@ class Agent(base.Agent):
                     success, new_theta = self.line_search(loss_fun, old_theta, fullstep, expected_improve_rate)
                     if success:
                         vector_to_parameters(new_theta, self._policy.parameters())
+            logger.info('Iter: {}, E_Reward: {}'.format(i_iter, round(e_reward, 2)))
 
     def get_loss(self, theta, b_s, b_a, advantage):
         # get surrogate loss
