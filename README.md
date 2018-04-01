@@ -13,10 +13,10 @@ Easy to modify.
 More comments for detail theory and tricks.
 
 # Implemented algorithms
+* REINFORCE (Vanilla Policy Gradient)
+* DDPG
 * DQN
 * TRPO
-* DDPG
-* REINFORCE (Vanilla Policy Gradient)
 
 # Dependency
 > Tested in macOS 10.13
