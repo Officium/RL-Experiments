@@ -18,7 +18,7 @@ class Agent(base.Agent):
     def __init__(self,
                  actor, target_actor, optimizer_actor,
                  critic, target_critic, optimizer_critic,
-                 replay_module, noise_generator, reward_gamma=0.99, tau=1e-3):
+                 replay_module, noise_generator, reward_gamma=0.99, tau=1e-3, warmup_size=100):
         """ Just follow the `Algorithm 1` in [1], suppose any element of action in [-1, 1]
         Args:
             actor: actor network
@@ -31,6 +31,7 @@ class Agent(base.Agent):
             noise_generator: random process for action exploration
             reward_gamma: reward discount
             tau: soft update parameter of target network, i.e. theta^target = /tau * theta + (1 - /tau) * theta^target
+            warmup_size: no training until the length of replay module is larger than `warmup_size`
         """
         self._actor = actor
         self._target_actor = target_actor
@@ -42,6 +43,7 @@ class Agent(base.Agent):
         self._noise_generator = noise_generator
         self.reward_gamma = reward_gamma
         self.tau = tau
+        self.warmup_size = warmup_size
 
     def act(self, state, step=None, noise=None):
         state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0))
@@ -64,6 +66,8 @@ class Agent(base.Agent):
                 e_reward += r
                 self._replay_module.add(tuple((s, a, [r], s_)))
 
+                if len(self._replay_module) < self.warmup_size:
+                    continue
                 # sample batch transitions
                 b_s, b_a, b_r, b_s_ = self._replay_module.sample(batch_size)
                 b_s = numpy.vstack(b_s)
