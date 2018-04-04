@@ -19,7 +19,7 @@ class Agent(base.Agent):
     # [2] https://github.com/joschu/modular_rl
     # [3] Martens J, Sutskever I. Training deep and recurrent networks with hessian-free optimization[M]
     #     Neural networks: Tricks of the trade. Springer, Berlin, Heidelberg, 2012: 479-535.
-    def __init__(self, policy, value, loss, optimizer, accept_ratio=0.9, reward_gamma=0.9,
+    def __init__(self, policy, value, loss, optimizer, accept_ratio=0.1, reward_gamma=0.99,
                  cg_iters=10, cg_tol=1e-10, cg_damping=1e-3, max_kl=1e-2, ls_iters=10):
         """
         Args:
@@ -53,70 +53,64 @@ class Agent(base.Agent):
         action = prob.multinomial(1).data.numpy()[0, 0]
         return action, prob
 
-    def learn(self, env, max_iter, batch_size, sample_episodes):
+    def learn(self, env, max_iter, sample_episodes):
         for i_iter in xrange(max_iter):
             # sample trajectories using single path
-            trajectories = [[], [], [], []]  # s, a, r, p
+            b_s, b_a, b_r, b_p = [[], [], [], []]  # s, a, r, p
             e_reward = 0
             for _ in xrange(sample_episodes):
                 # env.render()
                 s = env.reset()
                 episode_len = 0
                 done = False
-                reward = 0.0
                 while not done:
                     episode_len += 1
                     a, p = self.act(s)
                     s_, r, done, info = env.step(a)
-                    reward += r
-                    trajectories[0].append(s)
-                    trajectories[1].append([a])
-                    trajectories[2].append([r])
-                    trajectories[3].append(p)
+                    e_reward += r
+                    b_s.append(s)
+                    b_a.append([a])
+                    b_r.append([r * (1 - done)])
+                    b_p.append(p)
                     s = s_
                 for i in xrange(1, episode_len):
-                    trajectories[2][-i-1][0] += trajectories[2][-i][0] * self.reward_gamma
-                e_reward += reward / episode_len
+                    b_r[-i-1][0] += b_r[-i][0] * self.reward_gamma
+            b_s, b_r = map(torch.FloatTensor, [b_s, b_r])
+            b_p = torch.cat(b_p)
+            b_a = torch.LongTensor(b_a)
             e_reward /= sample_episodes
 
-            # batch training
-            for index in xrange(0, len(trajectories[0]), batch_size):
-                # load batch data
-                b_s, b_a, b_r, b_p = (trajectories[i][index:index+batch_size] for i in xrange(4))
-                b_s, b_r = map(torch.FloatTensor, [b_s, b_r])
-                b_p = torch.cat(b_p)
-                b_a = torch.LongTensor(b_a)
-                baseline = self._value.forward(Variable(b_s))
-                advantage = b_r - baseline.data
-                # This normalization is found in John's code. It is a way to stabilize the gradients during BP.
-                advantage = (advantage - advantage.mean()) / advantage.std()
+            # update value i.e. improve baseline
+            baseline = self._value(Variable(b_s))
+            advantage = b_r - baseline.data
+            # This normalization is found in John's code. It is a way to stabilize the gradients during BP.
+            advantage = (advantage - advantage.mean()) / advantage.std()
+            loss = self.loss(baseline, Variable(b_r))
+            self.optimizer.zero_grad()
+            loss.backward()
+            self.optimizer.step()
 
-                # update value i.e. improve baseline
-                loss = self.loss(baseline, Variable(b_r))
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
-
-                # update policy
-                new_probs = b_p.gather(1, Variable(b_a))  # use old probs as start point to search
-                old_probs = new_probs.detach()  # detach the old probs
-                obj = (Variable(advantage) * (new_probs / old_probs)).mean()  # the obj of eq16 in John's thesis page25
-                pg = self.flatten_grad(self._policy.parameters(), -obj).data
-                if numpy.allclose(pg, 0):
-                    logger.warn("got zero gradient. not updating")
-                else:
-                    # [3]
-                    fvp = partial(self.fvp, b_s=Variable(b_s))
-                    stepdir = self.cg(fvp, -pg)
-                    shs = 0.5 * stepdir.dot(fvp(stepdir))
-                    lm = numpy.sqrt(shs / self.max_kl)
-                    fullstep = Variable(stepdir / lm)
-                    expected_improve_rate = -pg.dot(stepdir) / lm
-                    loss_fun = partial(self.get_loss, b_s=Variable(b_s), b_a=Variable(b_a), advantage=advantage)
-                    old_theta = parameters_to_vector(self._policy.parameters())
-                    success, new_theta = self.line_search(loss_fun, old_theta, fullstep, expected_improve_rate)
-                    if success:
-                        vector_to_parameters(new_theta, self._policy.parameters())
+            # update policy
+            new_probs = b_p.gather(1, Variable(b_a))  # use old probs as start point to search
+            old_probs = new_probs.detach()  # detach the old probs
+            obj = (Variable(advantage) * (new_probs / (old_probs + 1e-8))).mean()  # the obj of eq16 in [1] page25
+            self._policy.zero_grad()
+            pg = self.flatten_grad(self._policy.parameters(), -obj).data
+            if numpy.allclose(pg, 0):
+                logger.warn("got zero gradient. not updating")
+            else:
+                # [3]
+                fvp = partial(self.fvp, b_s=Variable(b_s))
+                stepdir = self.cg(fvp, -pg)
+                shs = 0.5 * stepdir.dot(fvp(stepdir))
+                lm = numpy.sqrt(shs / self.max_kl)
+                fullstep = Variable(stepdir / lm)
+                expected_improve_rate = -pg.dot(stepdir) / lm
+                loss_fun = partial(self.get_loss, b_s=Variable(b_s), b_a=Variable(b_a), advantage=advantage)
+                old_theta = parameters_to_vector(self._policy.parameters())
+                success, new_theta = self.line_search(loss_fun, old_theta, fullstep, expected_improve_rate)
+                if success:
+                    vector_to_parameters(new_theta, self._policy.parameters())
             logger.info('Iter: {}, E_Reward: {}'.format(i_iter, round(e_reward, 2)))
 
     def get_loss(self, theta, b_s, b_a, advantage):
@@ -125,13 +119,16 @@ class Agent(base.Agent):
         new_model = copy.deepcopy(self._policy)
         vector_to_parameters(theta, new_model.parameters())
         prob_new = new_model(b_s).gather(1, b_a).data
-        return -(prob_new / prob_old * advantage).mean()
+        return -(prob_new / (prob_old + 1e-8) * advantage).mean()
 
     def fvp(self, v, b_s):
         # first, calculate fisher information matrix of $ \bar{D}_KL(\theta_old, \theta) $
         # see more in John's thesis section 3.12 page 40
-        grads = self.flatten_grad(self._policy.parameters(), self._policy.get_kl(b_s), create_graph=True)
-        grads = self.flatten_grad(self._policy.parameters(), (grads * Variable(v)).sum())
+        prob_new = self._policy(b_s)
+        prob_old = prob_new.detach()
+        kl = (prob_old * torch.log(prob_old / (prob_new + 1e-8))).sum(1).mean()
+        grads = self.flatten_grad(self._policy.parameters(), kl, create_graph=True)
+        grads = self.flatten_grad(self._policy.parameters(), (grads * Variable(v)).sum())  # maybe cause nan gradient
         # for conjugate gradient, multiply v * cg_damping
         return grads.data + v * self.cg_damping
 

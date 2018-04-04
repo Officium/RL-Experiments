@@ -12,9 +12,10 @@ from baselines import DQN, base
 class Net(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 10)
+        self.fc1 = nn.Linear(state_dim, 64)
         self.fc1.weight.data.normal_(0, 0.1)
-        self.out = nn.Linear(10, action_dim)
+
+        self.out = nn.Linear(64, action_dim)
         self.out.weight.data.normal_(0, 0.1)
 
     def forward(self, x):
@@ -27,6 +28,6 @@ class Net(nn.Module):
 env = gym.make('CartPole-v0')
 q = Net(env.observation_space.shape[0], env.action_space.n)
 target_q = copy.deepcopy(q)
-agent = DQN.Agent(q, target_q, base.ReplayBuffer(1000000),
-                  torch.optim.Adam(q.parameters(), lr=2.5e-4), nn.MSELoss(), 10000)
+agent = DQN.Agent(q, target_q, base.ReplayBuffer(50000),
+                  torch.optim.Adam(q.parameters(), lr=1e-3), nn.MSELoss(), 500, reward_gamma=1.0)
 agent.learn(env, 1000, 32)

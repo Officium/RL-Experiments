@@ -2,25 +2,28 @@
 
 The motivation of this project is to compare and modify deep reinforcement learning algorithms easily **for experiments**.
 
-## Disadvantages
-Not highly modularized.
-
-A little unfriendly for DRL beginners.
-
-## Advantages
-Easy to modify.
-
-More comments for detail theory and tricks.
+|  | Advantages | Disadvantages |
+| --- | --- | --- |
+| **Engineering** | Consistent agent style | Not highly modularized |
+| **Academic** | Easy to modify and fine-tune<br>More comments for detail theory and tricks | A little unfriendly for DRL beginners |
 
 # Implemented algorithms
-* REINFORCE (Vanilla Policy Gradient)
-* DDPG
+
+* REINFORCE
 * DQN
+* DDPG
+* A3C
 * TRPO
 * PPO
 
 # Dependency
-> Tested in macOS 10.13
-* Python 2.7.10
-* OpenAI gym 0.10.3
-* PyTorch 0.3.0
+
+* Python: 2.7
+* Gym: 0.10.3
+* PyTorch: 0.3.0
+* We propose to build your environment by virtualenv or docker
+
+# Plans
+
+* Python 3.5+ support
+* Implement more algorithms like Q-Prop, Rainbow, GPS and NEC

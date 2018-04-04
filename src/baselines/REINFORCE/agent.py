@@ -24,7 +24,7 @@ class Agent(base.Agent):
         self.reward_gamma = reward_gamma
 
     def act(self, state, step=None, noise=None):
-        state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0), requires_grad=True)
+        state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0))
         prob = self._policy(state)
         action = prob.multinomial(1).data.numpy()[0, 0]
         return action, prob[0][action]
@@ -39,6 +39,7 @@ class Agent(base.Agent):
         for i_iter in xrange(max_iter):
             e_reward = 0
             for j_iter in xrange(batch_size):
+                # env.render()
                 s = env.reset()
                 log_probs = []
                 rewards = []
@@ -54,7 +55,7 @@ class Agent(base.Agent):
                 loss = 0
                 for t in xrange(1, episode_len):
                     rewards[episode_len - t - 1] += rewards[episode_len - t] * self.reward_gamma
-                    loss -= log_probs[episode_len - t - 1] * rewards[episode_len - t - 1]
+                    loss -= log_probs[episode_len - t - 1] * rewards[episode_len - t - 1]  # likelihood ratio
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()

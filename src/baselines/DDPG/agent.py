@@ -2,7 +2,6 @@
 import numpy
 
 import torch
-import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.convert_parameters import vector_to_parameters, parameters_to_vector
 
@@ -18,7 +17,8 @@ class Agent(base.Agent):
     def __init__(self,
                  actor, target_actor, optimizer_actor,
                  critic, target_critic, optimizer_critic,
-                 replay_module, noise_generator, reward_gamma=0.99, tau=1e-3, warmup_size=100):
+                 loss, replay_module, noise_generator,
+                 reward_gamma=0.99, tau=1e-3, warmup_size=100, explore_fraction=0.3):
         """ Just follow the `Algorithm 1` in [1], suppose any element of action in [-1, 1]
         Args:
             actor: actor network
@@ -27,11 +27,13 @@ class Agent(base.Agent):
             critic: critic network
             target_critic: target critic network
             optimizer_critic: optimizer of critic, e.g. torch.optim.Adam
+            loss: loss function for value, calculate loss by `loss(eval, target)`
             replay_module: replay buffer
             noise_generator: random process for action exploration
             reward_gamma: reward discount
             tau: soft update parameter of target network, i.e. theta^target = /tau * theta + (1 - /tau) * theta^target
             warmup_size: no training until the length of replay module is larger than `warmup_size`
+            explore_fraction: add noise rate, default 0.3 means 30% train time will add noise
         """
         self._actor = actor
         self._target_actor = target_actor
@@ -41,13 +43,15 @@ class Agent(base.Agent):
         self._optimizer_critic = optimizer_critic
         self._replay_module = replay_module
         self._noise_generator = noise_generator
+        self.loss = loss
         self.reward_gamma = reward_gamma
         self.tau = tau
         self.warmup_size = warmup_size
+        self.explore_fraction = explore_fraction
 
     def act(self, state, step=None, noise=None):
-        state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0))
-        action = self._actor.forward(state).data
+        state = torch.unsqueeze(torch.FloatTensor(state), 0)
+        action = self._actor(Variable(state, volatile=True)).data  # only return action, set volatile=True
         if noise is not None:
             action += noise
         return action.clamp(-1, 1).numpy()[0]
@@ -57,34 +61,36 @@ class Agent(base.Agent):
             s = env.reset()
             self._noise_generator.reset()
             done = False
+            add_noise = i_iter * 1.0 / max_iter < self.explore_fraction
             e_reward = 0
             while not done:
                 # env.render()
-                noise = torch.FloatTensor(self._noise_generator.generate())
+                noise = torch.FloatTensor(self._noise_generator.generate()) if add_noise else None
                 a = self.act(s, noise=noise)
                 s_, r, done, info = env.step(a)
+                self._replay_module.add(tuple((s, a, [r], s_, [int(done)])))
+                s = s_
                 e_reward += r
-                self._replay_module.add(tuple((s, a, [r], s_)))
 
                 if len(self._replay_module) < self.warmup_size:
                     continue
                 # sample batch transitions
-                b_s, b_a, b_r, b_s_ = self._replay_module.sample(batch_size)
+                b_s, b_a, b_r, b_s_, b_d = self._replay_module.sample(batch_size)
                 b_s = numpy.vstack(b_s)
                 b_a = numpy.vstack(b_a)
-                b_s, b_a, b_r = map(lambda ryo: Variable(torch.FloatTensor(ryo)), [b_s, b_a, b_r])
+                b_s, b_a, b_r, b_d = map(lambda ryo: Variable(torch.FloatTensor(ryo)), [b_s, b_a, b_r, b_d])
                 b_s_ = Variable(torch.FloatTensor(b_s_), volatile=True)
 
                 # update critic
                 self._optimizer_critic.zero_grad()
-                y = b_r + self.reward_gamma * self._target_critic.forward(b_s_, self._target_actor.forward(b_s_))
-                loss = nn.MSELoss()(self._critic.forward(b_s, b_a), y)
+                y = b_r + self.reward_gamma * self._target_critic(b_s_, self._target_actor(b_s_)) * (1 - b_d)
+                loss = self.loss(self._critic(b_s, b_a), y)
                 loss.backward()
                 self._optimizer_critic.step()
 
                 # update actor
                 self._optimizer_actor.zero_grad()
-                loss = -self._critic.forward(b_s, self._actor.forward(b_s)).mean()
+                loss = -self._critic(b_s, self._actor(b_s)).mean()  # dpg, eq6 in [1]
                 loss.backward()
                 self._optimizer_actor.step()
 
