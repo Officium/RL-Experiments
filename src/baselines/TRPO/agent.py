@@ -81,7 +81,7 @@ class Agent(base.Agent):
             e_reward /= sample_episodes
 
             # update value i.e. improve baseline
-            baseline = self._value(Variable(b_s))
+            baseline = self._value(Variable(b_s))  # not using TD estimate, don't need multipy (1 - b_d)
             advantage = b_r - baseline.data
             # This normalization is found in John's code. It is a way to stabilize the gradients during BP.
             advantage = (advantage - advantage.mean()) / advantage.std()
