@@ -9,35 +9,20 @@ import torch.nn.functional as F
 from baselines import A3C
 
 
-class Value(nn.Module):
-    def __init__(self, state_dim):
-        super(Value, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 10)
-        self.fc1.weight.data.normal_(0, 0.1)
-        self.out = nn.Linear(10, 1)
-        self.out.weight.data.normal_(0, 0.1)
-
-    def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        actions_value = self.out(x)
-        return actions_value
-
-
-class Policy(nn.Module):
+class AC(nn.Module):
     def __init__(self, state_dim, action_dim):
-        super(Policy, self).__init__()
+        super(AC, self).__init__()
         self.fc1 = nn.Linear(state_dim, 10)
         self.fc1.weight.data.normal_(0, 0.1)
-        self.out = nn.Linear(10, action_dim)
-        self.out.weight.data.normal_(0, 0.1)
+        self.fc2a = nn.Linear(10, action_dim)
+        self.fc2a.weight.data.normal_(0, 0.1)
         self.softmax = nn.Softmax(1)
+        self.fc2c = nn.Linear(10, 1)
+        self.fc2c.weight.data.normal_(0, 0.1)
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        actions_prob = self.softmax(self.out(x))
-        return actions_prob
+        x = F.relu(self.fc1(x))
+        return self.softmax(self.fc2a(x)), self.fc2c(x)
 
 
 # copy from https://github.com/ikostrikov/pytorch-a3c/blob/master/my_optim.py
@@ -110,9 +95,8 @@ class SharedAdam(torch.optim.Adam):
 
 
 env = gym.make('CartPole-v0')
-policy = Policy(env.observation_space.shape[0], env.action_space.n)
-value = Value(env.observation_space.shape[0])
-agent = A3C.Agent(policy, value,
-                  SharedAdam(policy.parameters(), lr=1e-2), SharedAdam(value.parameters(), lr=1e-2),
-                  nn.MSELoss(), 0.99)
-agent.learn(env, 20000, 20, 1, 1, 1)
+ac = AC(env.observation_space.shape[0], env.action_space.n)
+agent = A3C.Agent(ac,
+                  SharedAdam(ac.parameters(), lr=1e-3),
+                  nn.MSELoss())
+agent.learn(env, 2000, 200, 32, 1, 1)
