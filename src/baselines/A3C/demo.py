@@ -4,7 +4,6 @@ import math
 import gym
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from baselines import A3C
 
@@ -12,17 +11,24 @@ from baselines import A3C
 class AC(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(AC, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 10)
-        self.fc1.weight.data.normal_(0, 0.1)
-        self.fc2a = nn.Linear(10, action_dim)
-        self.fc2a.weight.data.normal_(0, 0.1)
-        self.softmax = nn.Softmax(1)
-        self.fc2c = nn.Linear(10, 1)
-        self.fc2c.weight.data.normal_(0, 0.1)
+        self.fc = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.ReLU(inplace=True)
+        )
+        self.value = nn.Sequential(
+            nn.Linear(128, 1),
+        )
+        self.policy = nn.Sequential(
+            nn.Linear(128, action_dim),
+            nn.LogSoftmax(1)
+        )
+        for attr in (self.fc, self.value, self.policy):
+            nn.init.xavier_normal_(attr[0].weight)
+            nn.init.constant_(attr[0].bias, 0)
 
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return self.softmax(self.fc2a(x)), self.fc2c(x)
+    def forward(self, state):
+        x = self.fc(state)
+        return self.policy(x), self.value(x)
 
 
 # copy from https://github.com/ikostrikov/pytorch-a3c/blob/master/my_optim.py
@@ -84,8 +90,8 @@ class SharedAdam(torch.optim.Adam):
 
                 denom = exp_avg_sq.sqrt().add_(group['eps'])
 
-                bias_correction1 = 1 - beta1**state['step'][0]
-                bias_correction2 = 1 - beta2**state['step'][0]
+                bias_correction1 = 1 - beta1 ** state['step'].item()
+                bias_correction2 = 1 - beta2 ** state['step'].item()
                 step_size = group['lr'] * math.sqrt(
                     bias_correction2) / bias_correction1
 
@@ -99,4 +105,4 @@ ac = AC(env.observation_space.shape[0], env.action_space.n)
 agent = A3C.Agent(ac,
                   SharedAdam(ac.parameters(), lr=1e-3),
                   nn.MSELoss())
-agent.learn(env, 2000, 200, 32, 1, 1)
+agent.learn(env, 200000, 200, 4, 1, 1)

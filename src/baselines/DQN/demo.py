@@ -4,7 +4,6 @@ import copy
 import gym
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from baselines import DQN, base
 
@@ -12,17 +11,17 @@ from baselines import DQN, base
 class Net(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 64)
-        self.fc1.weight.data.normal_(0, 0.1)
-
-        self.out = nn.Linear(64, action_dim)
-        self.out.weight.data.normal_(0, 0.1)
+        self.fc = nn.Sequential(
+            nn.Linear(state_dim, 64),
+            nn.ReLU(inplace=True),
+            nn.Linear(64, action_dim)
+        )
+        for layer in (0, 2):
+            nn.init.xavier_normal_(self.fc[layer].weight)
+            nn.init.constant_(self.fc[layer].bias, 0)
 
     def forward(self, x):
-        x = self.fc1(x)
-        x = F.relu(x)
-        actions_value = self.out(x)
-        return actions_value
+        return self.fc(x)
 
 
 env = gym.make('CartPole-v0')

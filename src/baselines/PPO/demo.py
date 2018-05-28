@@ -2,7 +2,6 @@
 import gym
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 from baselines import PPO
 
@@ -10,17 +9,24 @@ from baselines import PPO
 class AC(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(AC, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 10)
-        self.fc1.weight.data.normal_(0, 0.1)
-        self.fc2a = nn.Linear(10, action_dim)
-        self.fc2a.weight.data.normal_(0, 0.1)
-        self.softmax = nn.Softmax(1)
-        self.fc2c = nn.Linear(10, 1)
-        self.fc2c.weight.data.normal_(0, 0.1)
+        self.fc = nn.Sequential(
+            nn.Linear(state_dim, 10),
+            nn.ReLU(inplace=True),
+        )
+        self.policy = nn.Sequential(
+            nn.Linear(10, action_dim),
+            nn.LogSoftmax(1)
+        )
+        self.value = nn.Sequential(
+            nn.Linear(10, 1)
+        )
+        for attr in (self.fc, self.policy, self.value):
+            nn.init.xavier_normal_(attr[0].weight)
+            nn.init.constant_(attr[0].bias, 0)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        return self.softmax(self.fc2a(x)), self.fc2c(x)
+        x = self.fc(x)
+        return self.policy(x), self.value(x)
 
 
 env = gym.make('CartPole-v0')

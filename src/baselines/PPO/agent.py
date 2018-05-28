@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-import numpy
+import numpy as np
 import torch
-from torch.autograd import Variable
+from torch.utils.data import DataLoader
 
 from baselines import base
 from utils.logger import get_logger
@@ -12,7 +12,8 @@ class Agent(base.Agent):
     # References:
     # [1] Schulman J, Wolski F, Dhariwal P, et al. Proximal policy optimization algorithms[J].
     #     arXiv preprint arXiv:1707.06347, 2017.
-    def __init__(self, ac, loss, optimizer, epsilon=0.2, reward_gamma=0.99, c1=1e-4, c2=1e-6):
+    def __init__(self, ac, loss, optimizer, epsilon=0.2,
+                 reward_gamma=0.99, c1=1e-4, c2=1e-6, gae_lambda=0.95):
         """
         Args:
             ac: ac network (state -> prob, value)
@@ -30,63 +31,67 @@ class Agent(base.Agent):
         self.reward_gamma = reward_gamma
         self._c1 = c1
         self._c2 = c2
+        self.gae_lambda = gae_lambda
 
     def act(self, state, step=None, noise=None):
-        state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0))
-        prob, value = self._ac(state)
-        action = prob.multinomial(1).data.numpy()[0, 0]
-        return action, prob, value
+        with torch.no_grad():
+            state = torch.Tensor(state).unsqueeze(0)
+            logprob, value = self._ac(state)
+            action = logprob.exp().multinomial(1).numpy()[0, 0]
+            return action, logprob[0, action], value[0, 0]
 
     def learn(self, env, max_iter, sample_episodes=32, optim_max_iter=4, optim_batch_size=256):
-        for i_iter in xrange(max_iter):
+        for i_iter in range(max_iter):
             # sample trajectories using single path
-            trajectories = [[], [], [], [], []]  # s, a, r, p, v
+            trajectories = []  # s, a, r, logp
             e_reward = 0
-            for _ in xrange(sample_episodes):
+            for _ in range(sample_episodes):
                 # env.render()
+                values = []
                 s = env.reset()
-                episode_len = 0
                 done = False
                 while not done:
-                    episode_len += 1
-                    a, p, v = self.act(s)
-                    s_, r, done, info = env.step(a)
+                    a, logp, v = self.act(s)
+                    s_, r, done, _ = env.step(a)
                     e_reward += r
-                    trajectories[0].append(s)
-                    trajectories[1].append([a])
-                    trajectories[2].append([r])
-                    trajectories[3].append(p)
-                    trajectories[4].append(v * (1 - done))
+                    trajectories.append([s, a, r, logp])
+                    values.append(v)
                     s = s_
-                for i in xrange(1, episode_len):
-                    trajectories[2][-i-1][0] += trajectories[2][-i][0] * self.reward_gamma
+                episode_len = len(values)
+                gae = np.empty(episode_len)
+                gae[-1] = last_gae = trajectories[-1][2] - values[-1]
+                for i in range(1, episode_len):
+                    delta = trajectories[-i-1][2] + self.reward_gamma * values[-i] - values[-i-1]
+                    gae[-i-1] = last_gae = delta + self.reward_gamma * self.gae_lambda * last_gae
+                for i in range(episode_len):
+                    trajectories[-(episode_len-i)][2] = gae[i] + values[i]
             e_reward /= sample_episodes
 
             # batch training
-            n = len(trajectories[0])
-            batch_size = min(optim_batch_size, n)
-            for j_iter in xrange(optim_max_iter):
+            batch_size = min(optim_batch_size, len(trajectories))
+            for j_iter in range(optim_max_iter):
                 # load batch data
-                for indexes in numpy.array_split(numpy.random.permutation(n), n / batch_size):
-                    b_s, b_a, b_r, b_p, b_v = ([trajectories[i][j] for j in indexes] for i in xrange(len(trajectories)))
-                    b_s, b_r = map(torch.FloatTensor, [b_s, b_r])
-                    b_a = torch.LongTensor(b_a)
-                    b_p = torch.cat(b_p).gather(1, Variable(b_a))
-                    b_e = -(b_p.log() * b_p).sum(-1)  # entropy
-                    b_v = torch.cat(b_v)
-                    advantage = b_r - b_v.data
+                loader = DataLoader(trajectories, batch_size=batch_size, shuffle=True)
+                for b_s, b_a, b_r, b_logp_old in loader:
+                    b_s = b_s.float()
+                    b_a = b_a.long().unsqueeze(1)
+                    b_r = b_r.float().unsqueeze(1)
+                    b_logp_old = b_logp_old.float().unsqueeze(1)
+                    b_logp, b_v = self._ac(b_s)
+                    entropy = -(b_logp * b_logp.exp()).sum(-1).mean()
+                    b_logp = b_logp.gather(1, b_a)
+                    advantage = b_r - b_v
                     advantage = (advantage - advantage.mean()) / advantage.std()
 
                     # update ac
-                    vloss = self.loss(b_v, Variable(b_r))  # value loss, L^VF
-                    advantage = Variable(advantage)
-                    ratio = b_p / (b_p.detach() + 1e-8)
+                    vloss = self.loss(b_v, b_r)  # value loss, L^VF
+                    ratio = (b_logp - b_logp_old).exp()
                     # policy loss, maybe very small because of the normalization, one can use a small self._c1 to solve
-                    ploss = -torch.mean(torch.min(ratio * advantage,  # -L^CLIP
-                                                  ratio.clamp(1 - self._epsilon, 1 + self._epsilon) * advantage))
-                    loss = ploss + self._c1 * vloss - self._c2 * b_e.mean()  # the same as openai/baselines's code
+                    clip = torch.min(ratio * advantage,  # L^CLIP
+                                     ratio.clamp(1 - self._epsilon, 1 + self._epsilon) * advantage).mean()
+                    loss = -clip + self._c1 * vloss - self._c2 * entropy  # the same as openai/baselines's code
                     self.optimizer.zero_grad()
                     # retain the graph because different j_iter may use same trajectory
-                    loss.backward(retain_graph=j_iter < optim_max_iter-1)
+                    loss.backward()
                     self.optimizer.step()
             logger.info('Iter: {}, E_Reward: {}'.format(i_iter, round(e_reward, 2)))

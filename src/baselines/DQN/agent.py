@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 import random
 
-import numpy
+import numpy as np
 import torch
-from torch.autograd import Variable
 
 from baselines import base
 from utils.logger import get_logger
@@ -40,16 +39,17 @@ class Agent(base.Agent):
         self.reward_gamma = reward_gamma
 
     def act(self, state, step=None, noise=None):
-        state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0))
-        value = self._q(state)
-        if random.random() < self._epsilon:  # greedy
-            return numpy.argmax(value[0].data.numpy())
-        else:  # random
-            return random.randrange(value.size(1))
+        with torch.no_grad():
+            state = torch.Tensor(state).unsqueeze(0)
+            value = self._q(state)
+            if random.random() < self._epsilon:  # greedy
+                return np.argmax(value[0].numpy())
+            else:  # random
+                return random.randrange(value.size(1))
 
     def learn(self, env, max_iter, batch_size):
         learn_counter = 0
-        for i_iter in xrange(max_iter):
+        for i_iter in range(max_iter):
             self._epsilon = min(1, i_iter / (self._epsilon_fraction * max_iter)) * self._epsilon_final
             s = env.reset()
             e_reward = 0
@@ -65,14 +65,13 @@ class Agent(base.Agent):
                 # update target q network
                 if learn_counter % self.target_replace_iter == 0:
                     self._target_q.load_state_dict(self._q.state_dict())
+                    for param in self._target_q.parameters():
+                        param.requires_grad = False
                 learn_counter += 1
 
                 # sample batch transitions
-                b_s, b_a, b_r, b_s_, b_d = self._replay_module.sample(batch_size)
-                b_s, b_r, b_s_, b_d = map(torch.FloatTensor, [b_s, b_r, b_s_, b_d])
-                b_a = torch.LongTensor(b_a)
-                b_s, b_a, b_r, b_d = map(Variable, [b_s, b_a, b_r, b_d])
-                b_s_ = Variable(b_s_, volatile=True)
+                b_s, b_a, b_r, b_s_, b_d = map(torch.Tensor, self._replay_module.sample(batch_size))
+                b_a = b_a.long()
 
                 # update parameters
                 q_eval = self._q(b_s).gather(1, b_a)  # shape (batch, 1)

@@ -54,10 +54,10 @@ class ReplayBuffer(object):
             batch_size: How many transitions to sample.
         """
         n = len(self._storage[0])
-        res = tuple(([] for _ in xrange(n)))
-        for _ in xrange(batch_size):
+        res = tuple(([] for _ in range(n)))
+        for _ in range(batch_size):
             sample = random.choice(self._storage)
-            for i in xrange(n):
+            for i in range(n):
                 res[i].append(sample[i])
         return res
 

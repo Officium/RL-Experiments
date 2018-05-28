@@ -14,16 +14,23 @@ The motivation of this project is to compare and modify deep reinforcement learn
 * DDPG
 * A3C
 * TRPO
-* PPO
+* PPO + GAE
 
 # Dependency
 
-* Python: 2.7
+* Python: 3.5+
 * Gym: 0.10.3
-* PyTorch: 0.3.0
+* PyTorch: 0.4.0
 * We propose to build your environment by virtualenv or docker
+
+# Usage
+
+```bash
+mkdir logs
+cd src
+python -m baselines.algorithm.demo  # replace `algorithm` by `TRPO`, `PPO` ...
+```
 
 # Plans
 
-* Python 3.5+ support
-* Implement more algorithms like Q-Prop, Rainbow, GPS and NEC
+* Implement more algorithms such as Q-Prop, Rainbow and GPS

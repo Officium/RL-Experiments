@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 import torch
-from torch.autograd import Variable
 
 from baselines import base
 from utils.logger import get_logger
@@ -24,10 +23,11 @@ class Agent(base.Agent):
         self.reward_gamma = reward_gamma
 
     def act(self, state, step=None, noise=None):
-        state = Variable(torch.unsqueeze(torch.FloatTensor(state), 0))
-        prob = self._policy(state)
-        action = prob.multinomial(1).data.numpy()[0, 0]
-        return action, prob[0][action]
+        with torch.no_grad():
+            state = torch.Tensor(state).unsqueeze(0)
+            logprob = self._policy(state)
+            action = logprob.exp().multinomial(1).numpy()[0, 0]
+            return action
 
     def learn(self, env, max_iter, batch_size):
         """
@@ -36,26 +36,29 @@ class Agent(base.Agent):
             max_iter: max_iter
             batch_size: how many episodes to sample in each iteration
         """
-        for i_iter in xrange(max_iter):
+        for i_iter in range(max_iter):
             e_reward = 0
-            for j_iter in xrange(batch_size):
+            for j_iter in range(batch_size):
                 # env.render()
                 s = env.reset()
-                log_probs = []
-                rewards = []
+                b_s, b_a, b_r = [[], [], []]  # s, a, r
                 done = False
                 while not done:
-                    a, prob = self.act(s)
+                    a = self.act(s)
                     s_, r, done, info = env.step(a)
-                    log_probs.append(prob.log())
-                    rewards.append(r)
+                    b_s.append(s)
+                    b_a.append(a)
+                    b_r.append(r)
                     e_reward += r
                     s = s_
-                episode_len = len(rewards)
-                loss = 0
-                for t in xrange(1, episode_len):
-                    rewards[episode_len - t - 1] += rewards[episode_len - t] * self.reward_gamma
-                    loss -= log_probs[episode_len - t - 1] * rewards[episode_len - t - 1]  # likelihood ratio
+                episode_len = len(b_s)
+                for t in range(1, episode_len):
+                    b_r[episode_len-t-1] += b_r[episode_len - t] * self.reward_gamma
+                b_s = torch.Tensor(b_s)
+                b_a = torch.Tensor(b_a).long().unsqueeze(1)
+                b_r = torch.Tensor(b_r).unsqueeze(1)
+                b_logp = self._policy(b_s).gather(1, b_a)
+                loss = -(b_logp * b_r).sum()  # likelihood ratio
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()

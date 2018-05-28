@@ -1,8 +1,5 @@
 # -*- coding: utf-8 -*-
-import numpy
-
 import torch
-from torch.autograd import Variable
 from torch.nn.utils.convert_parameters import vector_to_parameters, parameters_to_vector
 
 from baselines import base
@@ -50,14 +47,15 @@ class Agent(base.Agent):
         self.explore_fraction = explore_fraction
 
     def act(self, state, step=None, noise=None):
-        state = torch.unsqueeze(torch.FloatTensor(state), 0)
-        action = self._actor(Variable(state, volatile=True)).data  # only return action, set volatile=True
-        if noise is not None:
-            action += noise
-        return action.clamp(-1, 1).numpy()[0]
+        with torch.no_grad():
+            state = torch.Tensor(state).unsqueeze(0)
+            action = self._actor(state)
+            if noise is not None:
+                action += noise
+            return action.clamp(-1, 1).numpy()[0]
 
     def learn(self, env, max_iter, batch_size):
-        for i_iter in xrange(max_iter):
+        for i_iter in range(max_iter):
             s = env.reset()
             self._noise_generator.reset()
             done = False
@@ -65,25 +63,23 @@ class Agent(base.Agent):
             e_reward = 0
             while not done:
                 # env.render()
-                noise = torch.FloatTensor(self._noise_generator.generate()) if add_noise else None
+                noise = torch.Tensor(self._noise_generator.generate()) if add_noise else None
                 a = self.act(s, noise=noise)
                 s_, r, done, info = env.step(a)
-                self._replay_module.add(tuple((s, a, [r], s_, [int(done)])))
+                self._replay_module.add((s, a, [r], s_, [int(done)]))
                 s = s_
                 e_reward += r
 
                 if len(self._replay_module) < self.warmup_size:
                     continue
+
                 # sample batch transitions
-                b_s, b_a, b_r, b_s_, b_d = self._replay_module.sample(batch_size)
-                b_s = numpy.vstack(b_s)
-                b_a = numpy.vstack(b_a)
-                b_s, b_a, b_r, b_d = map(lambda ryo: Variable(torch.FloatTensor(ryo)), [b_s, b_a, b_r, b_d])
-                b_s_ = Variable(torch.FloatTensor(b_s_), volatile=True)
+                b_s, b_a, b_r, b_s_, b_d = map(torch.Tensor, self._replay_module.sample(batch_size))
 
                 # update critic
                 self._optimizer_critic.zero_grad()
-                y = b_r + self.reward_gamma * self._target_critic(b_s_, self._target_actor(b_s_)) * (1 - b_d)
+                with torch.no_grad():
+                    y = b_r + self.reward_gamma * self._target_critic(b_s_, self._target_actor(b_s_)) * (1 - b_d)
                 loss = self.loss(self._critic(b_s, b_a), y)
                 loss.backward()
                 self._optimizer_critic.step()

@@ -1,56 +1,62 @@
 # -*- coding: utf-8 -*-
 import copy
 
-import numpy as np
-
 import gym
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.optim import Adam
-import torch.nn.functional as F
 
 from baselines.DDPG import Agent
 from baselines.base import ReplayBuffer, NoiseGenerator
 
 
 class Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, init_w=3e-3):
+    def __init__(self, state_dim, action_dim):
         super(Actor, self).__init__()
-        self.fc1 = nn.Linear(state_dim, 128)
-        t = 1.0 / np.sqrt(128)
-        self.fc1.weight.data.uniform_(-t, t)
-
-        self.fc2 = nn.Linear(128, 128)
-        t = 1.0 / np.sqrt(128)
-        self.fc2.weight.data.uniform_(-t, t)
-
-        self.fc3 = nn.Linear(128, action_dim)
-        self.fc3.weight.data.uniform_(init_w, init_w)
+        self.fc = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, action_dim),
+            nn.Tanh()
+        )
+        for layer in (0, 2, 4):
+            nn.init.xavier_normal_(self.fc[layer].weight)
+            nn.init.constant_(self.fc[layer].bias, 0)
 
     def forward(self, x):
-        return F.tanh(self.fc3(F.relu(self.fc2(F.relu(self.fc1(x))))))
+        return self.fc(x)
 
 
 class Critic(nn.Module):
-    def __init__(self, state_dim, action_dim, init_w=3e-3):
+    def __init__(self, state_dim, action_dim):
         super(Critic, self).__init__()
-        self.fc1s = nn.Linear(state_dim, 128)
-        t = 1.0 / np.sqrt(128)
-        self.fc1s.weight.data.uniform_(-t, t)
-
-        self.fc1a = nn.Linear(action_dim, 128)
-        t = 1.0 / np.sqrt(128)
-        self.fc1a.weight.data.uniform_(-t, t)
-
-        self.fc2 = nn.Linear(128 + 128, 128)
-        t = 1.0 / np.sqrt(128)
-        self.fc2.weight.data.uniform_(-t, t)
-
-        self.fc3 = nn.Linear(128, 1)
-        self.fc3.weight.data.uniform_(init_w, init_w)
+        self.fcs = nn.Sequential(
+            nn.Linear(state_dim, 128),
+            nn.ReLU(inplace=True)
+        )
+        self.fca = nn.Sequential(
+            nn.Linear(action_dim, 128),
+            nn.ReLU(inplace=True)
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(256, 128),
+            nn.ReLU(inplace=True),
+            nn.Linear(128, 1)
+        )
+        nn.init.xavier_normal_(self.fcs[0].weight)
+        nn.init.constant_(self.fcs[0].bias, 0)
+        nn.init.xavier_normal_(self.fca[0].weight)
+        nn.init.constant_(self.fca[0].bias, 0)
+        nn.init.xavier_normal_(self.fc[0].weight)
+        nn.init.constant_(self.fc[0].bias, 0)
+        nn.init.xavier_normal_(self.fc[2].weight)
+        nn.init.constant_(self.fc[2].bias, 0)
 
     def forward(self, state, action):
-        return self.fc3(F.relu(self.fc2(torch.cat([F.relu(self.fc1s(state)), F.relu(self.fc1a(action))], 1))))
+        return self.fc(torch.cat([self.fcs(state), self.fca(action)], 1))
 
 
 # Fine-tune based on https://github.com/openai/baselines/blob/master/baselines/ddpg/noise.py
