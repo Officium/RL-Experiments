@@ -2,11 +2,6 @@
 
 The motivation of this project is to compare and modify deep reinforcement learning algorithms easily **for experiments**.
 
-|  | Advantages | Disadvantages |
-| --- | --- | --- |
-| **Engineering** | Consistent agent style | Not highly modularized |
-| **Academic** | Easy to modify and fine-tune<br>More comments for detail theory and tricks | A little unfriendly for DRL beginners |
-
 # Implemented algorithms
 
 * REINFORCE
