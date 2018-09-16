@@ -21,7 +21,9 @@ class _Logger(object):
     __metaclass__ = Singleton
 
     logLevel = logging.INFO
-    logFile = __file__ + os.sep.join(('', '..', '..', '..', 'logs', 'log'))
+    logDir = __file__ + os.path.join('', '..', '..', '..', 'logs')
+    if not os.path.exists(logDir): os.mkdir(logDir)
+    logFile = os.path.join(logDir, 'logs')
     logFormatterStr = '%(levelname)s %(asctime)s module %(process)s| %(processName)s| ' \
                       '%(filename)s| [line:%(lineno)d]| %(message)s'
     logMaxByte = 20 * 1024 * 1024

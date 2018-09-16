@@ -72,4 +72,3 @@ class NoiseGenerator(object):
     @abc.abstractmethod
     def reset(self):
         raise NotImplementedError("Must be implemented in subclass.")
-
