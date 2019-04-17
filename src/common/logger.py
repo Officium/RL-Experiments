@@ -10,11 +10,6 @@ import os
 __all__ = ['get_logger']
 
 
-def get_logger(key=None):
-    """ Get logger by key, key can be different random seed or algorithms """
-    return _Logger()[key]
-
-
 class Singleton(type):
     _instances = dict()
 
@@ -28,7 +23,7 @@ class Singleton(type):
 class _Logger(object):
     __metaclass__ = Singleton
 
-    logDir = os.path.join(__file__, '..', '..', 'logs')
+    logDir = os.path.join(os.path.curdir, '..', 'logs')
     defaultKey = 'log'
     os.makedirs(logDir, exist_ok=True)
     logLevel = logging.INFO
@@ -73,3 +68,11 @@ class _Logger(object):
             if self._loggers.get(key) is None:
                 self._add_logger(key)
         return self._loggers[key]
+
+
+logger = _Logger()
+
+
+def get_logger(key=None):
+    """ Get logger by key, key can be different random seed or algorithms """
+    return logger[key]

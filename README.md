@@ -7,6 +7,7 @@ The motivation of this project is to compare and modify deep reinforcement learn
 1. Rewrite algorithms and add environment utils refer to [openai/baselines](https://github.com/openai/baselines).    
 2. Highlight the differences between implementation and paper.    
 3. Make codes following PEP8.    
+4. Based on PyTorch 1.0.
 During that time, many internal or incomplete code will be committed. 
 If you mind, please checkout to the [old but stable version](https://github.com/Officium/RL-Experiments/commit/255aa7a9c03e38349d7c03540769eb9dfa91d33d). 
 Welcome any contributions!
