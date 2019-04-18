@@ -192,7 +192,7 @@ class WarpFrame(gym.ObservationWrapper):
         frame = cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
         if self.grayscale:
             frame = np.expand_dims(frame, -1)
-        return frame
+        return frame.transpose((2, 0, 1))
 
 
 class FrameStack(gym.Wrapper):
@@ -214,12 +214,12 @@ class FrameStack(gym.Wrapper):
         ob = self.env.reset()
         for _ in range(self.k):
             self.frames.append(ob)
-        return self._get_ob()
+        return np.asarray(self._get_ob())
 
     def step(self, action):
         ob, reward, done, info = self.env.step(action)
         self.frames.append(ob)
-        return self._get_ob(), reward, done, info
+        return np.asarray(self._get_ob()), reward, done, info
 
     def _get_ob(self):
         assert len(self.frames) == self.k

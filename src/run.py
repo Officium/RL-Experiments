@@ -4,17 +4,15 @@ import os
 
 import torch
 
-from common.logger import get_logger
 from common.util import learn, parse_all_args
 
 
 """ Some notice """
-logger = get_logger()
-logger.info("""
-Notes:
-Log will be recorded at ../logs
-CUDA usage is depend on `CUDA_VISIABLE_DEVICES`
-Modifiy common/models.py to specify parameters of network and optimizer
+print("""
+    Notes:
+        Log will be recorded at ../logs
+        CUDA usage is depend on `CUDA_VISIABLE_DEVICES`
+        Modifiy common/models.py to specify parameters of network and optimizer
 """)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -25,10 +23,10 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument('--env', type=str, required=True, help='environment ID')
 parser.add_argument('--algorithm', type=str, required=True, help='Algorithm')
-parser.add_argument('--seed', type=int, default=None, help='random seed')
+parser.add_argument('--seed', type=int, default=42, help='random seed')
 parser.add_argument('--number_timesteps', type=float, default=1e6)
 parser.add_argument('--network', default=None,
-                    help='mlp|cnn|lstm|cnn_lstm|small_cnn|cnn_only')
+                    help='mlp|cnn|lstm|cnnlstm|smallcnn')
 parser.add_argument('--optimizer', type=str, default='adam')
 parser.add_argument('--reward_scale', type=float, default=1.0)
 parser.add_argument('--save_path', type=str, default='../checkpoints')

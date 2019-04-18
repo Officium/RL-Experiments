@@ -1,8 +1,8 @@
 def classic_control():
     return dict(
         network='mlp',
-        gamma=1.0,
+        gamma=0.99,
         lr=0.01,
-        batch_episode=1,
-        batch_size=100,
+        timesteps_per_batch=100,
+        reset_after_batch=True,
     )

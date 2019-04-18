@@ -27,8 +27,8 @@ class _Logger(object):
     defaultKey = 'log'
     os.makedirs(logDir, exist_ok=True)
     logLevel = logging.INFO
-    logFormat = '%(levelname)s %(asctime)s module %(process)s| ' \
-                '%(processName)s| %(filename)s| [line:%(lineno)d]| %(message)s'
+    logFormat = '%(levelname)s %(asctime)s %(processName)s %(process)s' \
+                '| %(filename)s | [line:%(lineno)d] | %(message)s'
     logMaxByte = 20 * 1024 * 1024
     logBackupCount = 10
 
@@ -39,7 +39,7 @@ class _Logger(object):
 
     def _add_logger(self, key):
         # Reference: https://docs.python.org/2/library/logging.handlers.html
-        logger = logging.getLogger()
+        logger = logging.getLogger(key)
         logger.setLevel(_Logger.logLevel)
         path = os.path.join(_Logger.logDir, key)
 
@@ -70,9 +70,6 @@ class _Logger(object):
         return self._loggers[key]
 
 
-logger = _Logger()
-
-
 def get_logger(key=None):
     """ Get logger by key, key can be different random seed or algorithms """
-    return logger[key]
+    return _Logger()[key]

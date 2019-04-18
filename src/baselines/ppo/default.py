@@ -1,12 +1,15 @@
 def atari():
     return dict(
-        nsteps=128,
-        nminibatches=4,
-        lam=0.95,
-        gamma=0.99,
-        noptepochs=4,
-        log_interval=1,
-        ent_coef=.01,
+        network='smallcnn',
         lr=2.5e-4,
+        gamma=0.99,
+        grad_norm=0.5,
+        timesteps_per_batch=128,
+        ent_coef=.01,
+        vf_coef=0.5,
+        gae_lam=0.95,
+        nminibatches=4,
+        opt_iter=4,
         cliprange=0.1,
     )
+# TODO: learning rate schedule, ppo network
