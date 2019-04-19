@@ -12,4 +12,3 @@ def atari():
         opt_iter=4,
         cliprange=0.1,
     )
-# TODO: learning rate schedule, ppo network

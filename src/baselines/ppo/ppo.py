@@ -3,6 +3,7 @@ import os
 
 import torch
 import torch.nn as nn
+from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 
 from common.logger import get_logger
@@ -44,34 +45,42 @@ def learn(device,
         device, env, policy,
         number_timesteps, gamma, gae_lam, timesteps_per_batch
     )
+    max_iter = number_timesteps // timesteps_per_batch
+    scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
     n_iter = 0
     while True:
+        scheduler.step()
         try:
             batch = generator.__next__()
         except StopIteration:
             break
 
-        batch_o, batch_a, batch_r, batch_logp_old, info = batch
-        batch_size = ceil(batch_o.size(0) / nminibatches)
-        zipped_data = list(zip(batch_o, batch_a, batch_r, batch_logp_old))
-        loader = DataLoader(zipped_data, batch_size)
+        *data, info = batch
+        batch_size = ceil(data[0].size(0) / nminibatches)
+        loader = DataLoader(list(zip(*data)), batch_size)
         for _ in range(opt_iter):
-            for b_o, b_a, b_r, b_logp_old in loader:
+            for b_o, b_a, b_r, b_logp_old, b_v_old in loader:
                 # calculate advantange
                 b_logp, b_v = policy(b_o)
                 entropy = -(b_logp * b_logp.exp()).sum(-1).mean()
                 b_logp = b_logp.gather(1, b_a)
                 advantage = b_r - b_v
+                # highlight: this normalization gives better performance
                 advantage = (advantage - advantage.mean()) / advantage.std()
 
                 # update policy
-                vloss = (b_v - b_r).pow(2).mean()  # value loss, L^VF
+                c_b_v = b_v_old + (b_v - b_v_old).clamp(-cliprange, cliprange)
+                vloss = 0.5 * torch.mean(torch.max(
+                    (b_v - b_r).pow(2),
+                    (c_b_v - b_r).pow(2)
+                ))  # highlight: Clip is also applied to value loss
                 ratio = (b_logp - b_logp_old).exp()
-                clipped_ratio = ratio.clamp(1 - cliprange, 1 + cliprange)
-                clip = torch.min(ratio * advantage,  # L^CLIP
-                                 clipped_ratio * advantage).mean()
-                loss = -clip + vf_coef * vloss - ent_coef * entropy
+                pgloss = torch.mean(torch.max(
+                    -advantage * ratio,
+                    -advantage * ratio.clamp(1 - cliprange, 1 + cliprange)
+                ))
+                loss = pgloss + vf_coef * vloss - ent_coef * entropy
                 optimizer.zero_grad()
                 loss.backward()
                 if grad_norm is not None:
@@ -89,7 +98,7 @@ def _generate(device, env, policy,
               number_timesteps, gamma, gae_lam, timesteps_per_batch):
     """ Generate trajectories """
     record = ['o', 'a', 'r', 'logp', 'vpred', 'done']
-    export = ['o', 'a', 'r', 'logp']
+    export = ['o', 'a', 'r', 'logp', 'vpred']
     trajectories = Trajectories(record, export, device, gamma, gae_lam)
 
     o = env.reset()

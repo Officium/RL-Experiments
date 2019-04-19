@@ -1,7 +1,7 @@
 """ Build policy/value/... networks and optimizers """
 import torch
 import torch.nn as nn
-from torch.optim import *
+from torch.optim import Adam
 
 
 def build_policy(env, name, estimate_value=False, estimate_q=False):
