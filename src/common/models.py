@@ -36,7 +36,7 @@ class MLP(nn.Module):
     def __init__(self, in_dim, policy_dim, value_dim):
         super().__init__()
         self.feature = nn.Sequential(
-            Flaten(),
+            Flatten(),
             nn.Linear(in_dim, 64),
             nn.ReLU(True)
         )
@@ -65,7 +65,7 @@ class MLP(nn.Module):
             return value
 
 
-class Flaten(nn.Module):
+class Flatten(nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -81,7 +81,7 @@ class SMALLCNN(nn.Module):
             nn.ReLU(True),
             nn.Conv2d(8, 16, 4, 2),
             nn.ReLU(True),
-            Flaten()
+            Flatten()
         )
         dim = self.feature(torch.rand(1, *in_shape)).size(1)
         self.out = nn.Sequential(

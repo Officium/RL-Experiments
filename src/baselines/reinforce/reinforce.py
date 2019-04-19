@@ -24,10 +24,11 @@ def learn(device,
         lr (float): learning rate
         batch_episode (int): how many episodes will be sampled before update
         reset_after_batch (int): whether reset env after batch sample
+
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
-    set_global_seeds(seed)
+    set_global_seeds(env, seed)
 
     policy = build_policy(env, network).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
@@ -41,7 +42,7 @@ def learn(device,
         except StopIteration:
             break
 
-        info, b_o, b_a, b_r = batch
+        b_o, b_a, b_r, info = batch
         b_logp = policy(b_o).gather(1, b_a)
         loss = -(b_logp * b_r).sum()  # likelihood ratio
         optimizer.zero_grad()
@@ -58,27 +59,25 @@ def learn(device,
 def _generate(device, env, policy, number_timesteps,
               gamma, timesteps_per_batch, reset_after_batch):
     """ Generate trajectories """
+    record = ['o', 'a', 'r', 'done']
+    export = ['o', 'a', 'r']
+    trajectories = Trajectories(record, export, device, gamma)
+
     o = env.reset()
-    n = 0
-    trajectories = Trajectories('o', 'a', 'r', 'done')
-    while n < number_timesteps:
-        n += 1
+    for n in range(number_timesteps):
+        # sample action
         with torch.no_grad():
             logp = policy(torch.Tensor(o).unsqueeze(0).to(device))
             a = logp.exp().multinomial(1).cpu().numpy()[0, 0]
 
+        # take action in env
         o_, r, done, info = env.step(a)
 
+        # store batch data and update observation
         if (len(trajectories) + 1) % timesteps_per_batch == 0:
             trajectories.append(o, a, r, True)
-            yield trajectories.export(['o', 'a', 'r'], device, gamma, done)
-            if reset_after_batch or done:
-                o = env.reset()
-            else:
-                o = o_
+            yield trajectories.export(done)
+            o = env.reset() if reset_after_batch or done else o_
         else:
             trajectories.append(o, a, r, done)
-            if done:
-                o = env.reset()
-            else:
-                o = o_
+            o = env.reset() if done else o_

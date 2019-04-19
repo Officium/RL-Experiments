@@ -43,8 +43,9 @@ def learn(device,
         vf_iters (float): number of value update per policy update
         vf_lr (int): learning rate for optimizer of value
         entcoeff (float): coefficient of policy entropy term
+
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
-    set_global_seeds(seed)
+    set_global_seeds(env, seed)
     logger.critical('TRPO is not implemented! Welcome any contributions~')

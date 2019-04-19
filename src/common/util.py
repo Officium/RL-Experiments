@@ -21,7 +21,7 @@ for _env in gym.envs.registry.all():
     id2type[_env.id] = _env._entry_point.split(':')[0].rsplit('.', 1)[1]
 
 
-def build_env(env_id, algorithm, seed, env_type, **kwargs):
+def build_env(env_id, algorithm, env_type, **kwargs):
     """ Build env based on options """
     if env_type == 'atari':
         env = make_atari(env_id)
@@ -32,8 +32,9 @@ def build_env(env_id, algorithm, seed, env_type, **kwargs):
                 isinstance(env.observation_space, gym.spaces.Dict):
             keys = env.observation_space.spaces.keys()
             env = gym.wrappers.FlattenDictWrapper(env, dict_keys=list(keys))
+
     env = RewardScaler(env, kwargs.get('reward_scale', 1))
-    env.seed(seed)
+
     return env
 
 
@@ -52,17 +53,17 @@ def get_algorithm_module(algorithm, submodule):
     return import_module('.'.join(['baselines', algorithm, submodule]))
 
 
-def learn(env_id, algorithm, seed, **kwargs):
+def learn(env_id, algorithm, **kwargs):
     """ Learn entry """
     env_type = id2type[env_id]
-    env = build_env(env_id, algorithm, seed, env_type, **kwargs)
+    env = build_env(env_id, algorithm, env_type, **kwargs)
     algorithm = algorithm.lower()
     specific_options = get_algorithm_defaults(env_type, algorithm)
     for k, v in kwargs.items():
         if v is not None:
             specific_options[k] = v
     module = get_algorithm_module(algorithm, algorithm)
-    return getattr(module, 'learn')(env=env, seed=seed, **specific_options)
+    return getattr(module, 'learn')(env=env, **specific_options)
 
 
 def parse_all_args(parser):
@@ -88,22 +89,36 @@ def parse_all_args(parser):
     return common_options, other_options
 
 
-def set_global_seeds(seed):
+def set_global_seeds(env, seed):
+    env.seed(seed)
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
 
 
 class Trajectories(object):
-    def __init__(self, *record_keys):
-        assert set(record_keys).issubset({
-            'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'
-        })
+    """
+    Parameters:
+    -----------
+    record_keys (list[str]): stored keys
+    export_keys (list[str]): export keys, must be the subset of record_keys
+    device (torch.device): export device
+    gamma (float): reward gamma
+    gae_lam (float): gae lambda
+    """
+    SUPPORT_KEYS = {'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
+
+    def __init__(self, record_keys, export_keys, device, gamma, gae_lam=1.0):
+        assert set(record_keys).issubset(Trajectories.SUPPORT_KEYS)
+        assert set(export_keys).issubset(record_keys)
         self._keys = record_keys
         self._records = dict()
         for key in record_keys:
             self._records[key] = []
-        self._records['loginfo'] = None
+        self._export_keys = export_keys
+        self._device = device
+        self._gamma = gamma
+        self._gae_lam = gae_lam
 
     def append(self, *records):
         assert len(records) == len(self._keys)
@@ -115,13 +130,12 @@ class Trajectories(object):
     def __len__(self):
         return len(self._records[self._keys[0]])
 
-    def export(self, keys, device, gamma,
-               next_is_done, next_value=None, gae_lam=1.0):
+    def export(self, next_is_done, next_value=None):
         d = self._records['done']
         r = self._records['r']
         e_reward = sum(r) / sum(d)
         n = len(self._records['r'])
-        if 'vpred' in self._keys:
+        if 'vpred' in self._keys and self._gae_lam != 1:  # gae estimation
             v = self._records['vpred']
             gae = np.empty(n)
             last_gae = 0
@@ -131,17 +145,18 @@ class Trajectories(object):
                 else:
                     flag = 1 - d[i + 1]
                     next_value = v[i + 1]
-                delta = r[i] + gamma * next_value * flag - v[i]
-                gae[i] = last_gae = delta + gamma * gae_lam * flag * last_gae
+                delta = r[i] + self._gamma * next_value * flag - v[i]
+                delta += self._gamma * self._gae_lam * flag * last_gae
+                gae[i] = last_gae = delta
             for i in range(n):
                 self._records['r'][i] = gae[i] + v[i]
-        else:
+        else:  # discount reward
             for i in reversed(range(n - 1)):
-                self._records['r'][i] += gamma * (0 if d[i] else r[i + 1])
+                self._records['r'][i] += self._gamma * (0 if d[i] else r[i + 1])
 
-        res = [{'e_reward': e_reward}]
-        for key in keys:
-            tensor = torch.Tensor(self._records[key]).to(device)
+        res = []
+        for key in self._export_keys:
+            tensor = torch.Tensor(self._records[key]).to(self._device)
             if key == 'o':
                 tensor = tensor.float()
             elif key == 'a':
@@ -152,6 +167,7 @@ class Trajectories(object):
             elif key in {'r', 'done', 'logp', 'p', 'vpred'}:
                 tensor = tensor.float().unsqueeze(1)
             res.append(tensor)
+        res.append({'e_reward': e_reward})  # append log info in result
 
         for key in self._keys:
             self._records[key].clear()

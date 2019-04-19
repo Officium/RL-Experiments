@@ -32,10 +32,11 @@ def learn(device,
     nminibatches (int): number of training minibatches per update
     opt_iter (int): number of training iterations per update
     cliprange (float): clipping range
+
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
-    set_global_seeds(seed)
+    set_global_seeds(env, seed)
 
     policy = build_policy(env, network, estimate_value=True).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
@@ -51,12 +52,13 @@ def learn(device,
         except StopIteration:
             break
 
-        info, batch_o, batch_a, batch_r, batch_logp_old = batch
+        batch_o, batch_a, batch_r, batch_logp_old, info = batch
         batch_size = ceil(batch_o.size(0) / nminibatches)
         zipped_data = list(zip(batch_o, batch_a, batch_r, batch_logp_old))
         loader = DataLoader(zipped_data, batch_size)
         for _ in range(opt_iter):
             for b_o, b_a, b_r, b_logp_old in loader:
+                # calculate advantange
                 b_logp, b_v = policy(b_o)
                 entropy = -(b_logp * b_logp.exp()).sum(-1).mean()
                 b_logp = b_logp.gather(1, b_a)
@@ -66,9 +68,9 @@ def learn(device,
                 # update policy
                 vloss = (b_v - b_r).pow(2).mean()  # value loss, L^VF
                 ratio = (b_logp - b_logp_old).exp()
+                clipped_ratio = ratio.clamp(1 - cliprange, 1 + cliprange)
                 clip = torch.min(ratio * advantage,  # L^CLIP
-                                 ratio.clamp(1 - cliprange,
-                                             1 + cliprange) * advantage).mean()
+                                 clipped_ratio * advantage).mean()
                 loss = -clip + vf_coef * vloss - ent_coef * entropy
                 optimizer.zero_grad()
                 loss.backward()
@@ -86,32 +88,32 @@ def learn(device,
 def _generate(device, env, policy,
               number_timesteps, gamma, gae_lam, timesteps_per_batch):
     """ Generate trajectories """
+    record = ['o', 'a', 'r', 'logp', 'vpred', 'done']
+    export = ['o', 'a', 'r', 'logp']
+    trajectories = Trajectories(record, export, device, gamma, gae_lam)
+
     o = env.reset()
-    n = 0
-    trajectories = Trajectories('o', 'a', 'r', 'logp', 'vpred', 'done')
-    while n < number_timesteps:
-        n += 1
+    for n in range(number_timesteps):
+        # sample action
         with torch.no_grad():
             logp, v = policy(torch.Tensor(o).unsqueeze(0).to(device))
             a = logp.exp().multinomial(1).cpu().numpy()[0, 0]
             logp = logp.cpu().numpy()[0, a]
             v = v.cpu().numpy()[0, 0]
 
+        # take action in env
         o_, r, done, info = env.step(a)
 
+        # store batch data and update observation
         if (len(trajectories) + 1) % timesteps_per_batch == 0:
             trajectories.append(o, a, r, logp, v, True)
-            if not done:
-                with torch.no_grad():
+            with torch.no_grad():
+                if done:
+                    next_v = 0
+                else:
                     _, next_v = policy(torch.Tensor(o_).unsqueeze(0).to(device))
                     next_v = next_v.cpu().numpy()[0, 0]
-            else:
-                next_v = 0
-            yield trajectories.export(['o', 'a', 'r', 'logp'],
-                                      device, gamma, done, next_v, gae_lam)
+            yield trajectories.export(done, next_v)
         else:
             trajectories.append(o, a, r, logp, v, True)
-        if done:
-            o = env.reset()
-        else:
-            o = o_
+        o = env.reset() if done else o_
