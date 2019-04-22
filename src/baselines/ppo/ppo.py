@@ -1,5 +1,7 @@
-from math import ceil
 import os
+from collections import deque
+from itertools import chain
+from math import ceil
 
 import torch
 import torch.nn as nn
@@ -49,6 +51,7 @@ def learn(device,
     scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
     n_iter = 0
+    infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     while True:
         scheduler.step()
         try:
@@ -57,8 +60,11 @@ def learn(device,
             break
 
         *data, info = batch
+        for k, v in info.items():
+            infos[k].append(v)
         batch_size = ceil(data[0].size(0) / nminibatches)
         loader = DataLoader(list(zip(*data)), batch_size)
+        records = {'pg': [], 'v': [], 'ent': [], 'kl': [], 'clipfrac': []}
         for _ in range(opt_iter):
             for b_o, b_a, b_r, b_logp_old, b_v_old in loader:
                 # calculate advantange
@@ -87,8 +93,19 @@ def learn(device,
                     nn.utils.clip_grad_norm_(policy.parameters(), grad_norm)
                 optimizer.step()
 
+                # record logs
+                records['pg'].append(pgloss.item())
+                records['v'].append(vloss.item())
+                records['ent'].append(entropy.item())
+                records['kl'].append((b_logp - b_logp_old).pow(2).mean() * 0.5)
+                clipfrac = ((ratio - 1).abs() > cliprange).float().mean().item()
+                records['clipfrac'].append(clipfrac)
+
         n_iter += 1
-        logger.info('Iter {}, Reward {:.2f}'.format(n_iter, info['e_reward']))
+        logger.info('{} Iter {} {}'.format('=' * 30, n_iter, '=' * 30))
+        for k, v in chain(infos.items(), records.items()):
+            v = (sum(v) / len(v)) if v else float('nan')
+            logger.info('{}: {:.6f}'.format(k, v))
         if save_interval and n_iter % save_interval == 0:
             torch.save([policy.state_dict(), optimizer.state_dict()],
                        os.path.join(save_path, '{}.{}'.format(name, n_iter)))
@@ -97,11 +114,11 @@ def learn(device,
 def _generate(device, env, policy,
               number_timesteps, gamma, gae_lam, timesteps_per_batch):
     """ Generate trajectories """
-    record = ['o', 'a', 'r', 'logp', 'vpred', 'done']
+    record = ['new', 'o', 'a', 'r', 'done', 'logp', 'vpred']
     export = ['o', 'a', 'r', 'logp', 'vpred']
     trajectories = Trajectories(record, export, device, gamma, gae_lam)
 
-    o = env.reset()
+    o, new = env.reset(), True
     for n in range(number_timesteps):
         # sample action
         with torch.no_grad():
@@ -114,15 +131,16 @@ def _generate(device, env, policy,
         o_, r, done, info = env.step(a)
 
         # store batch data and update observation
-        if (len(trajectories) + 1) % timesteps_per_batch == 0:
-            trajectories.append(o, a, r, logp, v, True)
+        trajectories.append(new, o, a, r, done, logp, v)
+        if len(trajectories) % timesteps_per_batch == 0:
             with torch.no_grad():
                 if done:
-                    next_v = 0
+                    v_ = 0
                 else:
-                    _, next_v = policy(torch.Tensor(o_).unsqueeze(0).to(device))
-                    next_v = next_v.cpu().numpy()[0, 0]
-            yield trajectories.export(done, next_v)
+                    v_ = policy(torch.Tensor(o_).unsqueeze(0).to(device))[1]
+                    v_ = v_.cpu().numpy()[0, 0]
+            yield trajectories.export(v_)
+        if done:
+            o, new = env.reset(), True
         else:
-            trajectories.append(o, a, r, logp, v, True)
-        o = env.reset() if done else o_
+            o, new = o_, False

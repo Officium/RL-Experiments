@@ -1,5 +1,4 @@
 """ Build policy/value/... networks and optimizers """
-import torch
 import torch.nn as nn
 from torch.optim import Adam
 
@@ -16,6 +15,10 @@ def build_policy(env, name, estimate_value=False, estimate_q=False):
         policy_dim = env.action_space.n
         value_dim = policy_dim if estimate_q else int(estimate_value)
         return SMALLCNN(in_dim, policy_dim, value_dim)
+    elif name == 'CNN':
+        policy_dim = env.action_space.n
+        value_dim = policy_dim if estimate_q else int(estimate_value)
+        return CNN(in_dim, policy_dim, value_dim)
     else:
         raise NotImplementedError
 
@@ -76,16 +79,15 @@ class Flatten(nn.Module):
 class SMALLCNN(nn.Module):
     def __init__(self, in_shape, policy_dim, value_dim):
         super().__init__()
+        h, w = in_shape[1], in_shape[2]
+        cnn_out_dim = 16 * ((h - 6) // 4) * ((w - 6) // 4)
         self.feature = nn.Sequential(
             nn.Conv2d(in_shape[0], 8, 4, 2),
             nn.ReLU(True),
             nn.Conv2d(8, 16, 4, 2),
             nn.ReLU(True),
-            Flatten()
-        )
-        dim = self.feature(torch.rand(1, *in_shape)).size(1)
-        self.out = nn.Sequential(
-            nn.Linear(dim, 128),
+            Flatten(),
+            nn.Linear(cnn_out_dim, 128),
             nn.ReLU(True)
         )
 
@@ -105,6 +107,51 @@ class SMALLCNN(nn.Module):
 
     def forward(self, x):
         latent = self.out(self.feature(x / 255.0))
+        if hasattr(self, 'policy'):
+            logprob = self.policy(latent)
+        if hasattr(self, 'value'):
+            value = self.value(latent)
+        if hasattr(self, 'policy'):
+            if hasattr(self, 'value'):
+                return logprob, value
+            else:
+                return logprob
+        else:
+            return value
+
+
+class CNN(nn.Module):
+    def __init__(self, in_shape, policy_dim, value_dim):
+        super().__init__()
+        h, w = in_shape[1], in_shape[2]
+        cnn_out_dim = 64 * ((h - 14) // 4) * ((w - 14) // 4)
+        self.feature = nn.Sequential(
+            nn.Conv2d(in_shape[0], 32, 4, 2),
+            nn.ReLU(True),
+            nn.Conv2d(32, 64, 4, 2),
+            nn.ReLU(True),
+            nn.Conv2d(64, 64, 3, 1),
+            Flatten(),
+            nn.Linear(cnn_out_dim, 512),
+            nn.ReLU(True)
+        )
+
+        if policy_dim:
+            self.policy = nn.Sequential(
+                nn.Linear(512, policy_dim),
+                nn.LogSoftmax(1)
+            )
+
+        if value_dim:
+            self.value = nn.Linear(512, value_dim)
+
+        for _, m in self.named_modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.xavier_normal_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        latent = self.feature(x / 255.0)
         if hasattr(self, 'policy'):
             logprob = self.policy(latent)
         if hasattr(self, 'value'):

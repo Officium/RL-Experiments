@@ -12,7 +12,7 @@ def learn(device,
           number_timesteps,
           network, optimizer,
           save_path, save_interval,
-          gamma, lr, timesteps_per_batch, reset_after_batch, **kwargs):
+          gamma, lr, timesteps_per_batch, **kwargs):
     """
     Paper:
     Williams R J. Simple Statistical Gradient-Following Algorithms for
@@ -23,7 +23,6 @@ def learn(device,
         gamma (float): reward gamma
         lr (float): learning rate
         batch_episode (int): how many episodes will be sampled before update
-        reset_after_batch (int): whether reset env after batch sample
 
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
@@ -32,8 +31,8 @@ def learn(device,
 
     policy = build_policy(env, network).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
-    generator = _generate(device, env, policy, number_timesteps,
-                          gamma, timesteps_per_batch, reset_after_batch)
+    generator = _generate(device, env, policy,
+                          number_timesteps, gamma, timesteps_per_batch)
 
     n_iter = 0
     while True:
@@ -50,20 +49,24 @@ def learn(device,
         optimizer.step()
 
         n_iter += 1
-        logger.info('Iter {}, Reward {:.2f}'.format(n_iter, info['e_reward']))
+        logger.info('{} Iter {} {}'.format('=' * 30, n_iter, '=' * 30))
+        for k, v in info.items():
+            if isinstance(v, list):
+                v = (sum(v) / len(v)) if v else 0
+            logger.info('{}: {:.6f}'.format(k, v))
         if save_interval and n_iter % save_interval == 0:
             torch.save([policy.state_dict(), optimizer.state_dict()],
                        os.path.join(save_path, '{}.{}'.format(name, n_iter)))
 
 
-def _generate(device, env, policy, number_timesteps,
-              gamma, timesteps_per_batch, reset_after_batch):
+def _generate(device, env, policy,
+              number_timesteps, gamma, timesteps_per_batch):
     """ Generate trajectories """
-    record = ['o', 'a', 'r', 'done']
+    record = ['new', 'o', 'a', 'r', 'done']
     export = ['o', 'a', 'r']
     trajectories = Trajectories(record, export, device, gamma)
 
-    o = env.reset()
+    o, new = env.reset(), True
     for n in range(number_timesteps):
         # sample action
         with torch.no_grad():
@@ -74,10 +77,10 @@ def _generate(device, env, policy, number_timesteps,
         o_, r, done, info = env.step(a)
 
         # store batch data and update observation
-        if (len(trajectories) + 1) % timesteps_per_batch == 0:
-            trajectories.append(o, a, r, True)
-            yield trajectories.export(done)
-            o = env.reset() if reset_after_batch or done else o_
+        trajectories.append(new, o, a, r, done)
+        if len(trajectories) % timesteps_per_batch == 0:
+            yield trajectories.export()
+        if done:
+            o, new = env.reset(), True
         else:
-            trajectories.append(o, a, r, done)
-            o = env.reset() if done else o_
+            o, new = o_, False

@@ -2,7 +2,6 @@
 Note that this file is an MPI-free version of
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
-import copy
 import random
 import re
 from importlib import import_module
@@ -105,12 +104,17 @@ class Trajectories(object):
     device (torch.device): export device
     gamma (float): reward gamma
     gae_lam (float): gae lambda
+
+    Note that
+    `new` describe the current timestamp
+    `done` describe the next timestamp
     """
-    SUPPORT_KEYS = {'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
+    SUPPORT_KEYS = {'new', 'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
 
     def __init__(self, record_keys, export_keys, device, gamma, gae_lam=1.0):
         assert set(record_keys).issubset(Trajectories.SUPPORT_KEYS)
         assert set(export_keys).issubset(record_keys)
+        assert {'new', 'o', 'a', 'r', 'done'}.issubset(set(record_keys))
         self._keys = record_keys
         self._records = dict()
         for key in record_keys:
@@ -119,31 +123,35 @@ class Trajectories(object):
         self._device = device
         self._gamma = gamma
         self._gae_lam = gae_lam
+        self._offsets = {'new': [], 'r': []}
 
     def append(self, *records):
         assert len(records) == len(self._keys)
         for key, record in zip(self._keys, records):
+            if key == 'new':
+                record = int(record)
+                self._offsets['new'].append(record)
             if key == 'done':
                 record = int(record)
+            if key == 'r':
+                self._offsets['r'].append(record)
             self._records[key].append(record)
 
     def __len__(self):
         return len(self._records[self._keys[0]])
 
-    def export(self, next_is_done, next_value=None):
+    def export(self, next_value=None):
+        # estimate discounted reward
         d = self._records['done']
         r = self._records['r']
-        e_reward = sum(r) / sum(d)
         n = len(self._records['r'])
         if 'vpred' in self._keys and self._gae_lam != 1:  # gae estimation
             v = self._records['vpred']
             gae = np.empty(n)
             last_gae = 0
             for i in reversed(range(n)):
-                if i == n - 1:
-                    flag = 1 - next_is_done
-                else:
-                    flag = 1 - d[i + 1]
+                flag = 1 - d[i]
+                if i != n - 1:
                     next_value = v[i + 1]
                 delta = r[i] + self._gamma * next_value * flag - v[i]
                 delta += self._gamma * self._gae_lam * flag * last_gae
@@ -152,8 +160,9 @@ class Trajectories(object):
                 self._records['r'][i] = gae[i] + v[i]
         else:  # discount reward
             for i in reversed(range(n - 1)):
-                self._records['r'][i] += self._gamma * (0 if d[i] else r[i + 1])
+                self._records['r'][i] += self._gamma * r[i + 1] * (1 - d[i])
 
+        # convert to tensor
         res = []
         for key in self._export_keys:
             tensor = torch.Tensor(self._records[key]).to(self._device)
@@ -164,10 +173,27 @@ class Trajectories(object):
                     tensor = tensor.long().unsqueeze(1)
                 else:
                     tensor = tensor.float()  # continuous case
-            elif key in {'r', 'done', 'logp', 'p', 'vpred'}:
+            elif key in {'new', 'r', 'done', 'logp', 'p', 'vpred'}:
                 tensor = tensor.float().unsqueeze(1)
             res.append(tensor)
-        res.append({'e_reward': e_reward})  # append log info in result
+
+        # calculate log infos and append them to the result
+        offset_len = len(self._offsets['new'])
+        assert self._offsets['new'][0]
+        for i in range(1, offset_len)[::-1]:
+            if self._offsets['new'][i]:
+                epnum = sum(self._offsets['new'][:i])
+                res.append({
+                    # average episode length
+                    'eplenmean': i * 1.0 / epnum,
+                    # average episode reward
+                    'eprewmean': sum(self._offsets['r'][:i]) * 1.0 / epnum
+                })
+                self._offsets['r'] = self._offsets['r'][i:]
+                self._offsets['new'] = self._offsets['new'][i:]
+                break
+        else:
+            res.append(dict())
 
         for key in self._keys:
             self._records[key].clear()

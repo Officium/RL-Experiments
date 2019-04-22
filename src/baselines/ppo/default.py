@@ -1,6 +1,6 @@
 def atari():
     return dict(
-        network='smallcnn',
+        network='cnn',
         lr=2.5e-4,
         gamma=0.99,
         grad_norm=0.5,
