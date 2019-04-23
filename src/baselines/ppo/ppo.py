@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 
 from common.logger import get_logger
 from common.models import build_policy, get_optimizer
-from common.util import Trajectories
+from common.util import to_fp32, Trajectories
 
 
 def learn(device,
@@ -126,7 +126,7 @@ def _generate(device, env, policy,
     for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp, v = policy(torch.Tensor(o).to(device))
+            logp, v = policy(to_fp32(o, device))
             a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
             logp = logp.cpu().numpy()[0, a]
             v = v.cpu().numpy()[:, 0]
@@ -141,7 +141,7 @@ def _generate(device, env, policy,
         trajectories.append(o, a, r, done, logp, v)
         if n % timesteps_per_batch == 0:
             with torch.no_grad():
-                v_ = policy(torch.Tensor(o_).to(device))[1].cpu().numpy()[:, 0]
+                v_ = policy(to_fp32(o_, device))[1].cpu().numpy()[:, 0]
             yield trajectories.export(v_ * (1 - done)) + (infos, )
             infos.clear()
         o = o_

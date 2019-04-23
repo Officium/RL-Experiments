@@ -56,16 +56,12 @@ class MLP(nn.Module):
     def forward(self, x):
         latent = self.feature(x)
         if hasattr(self, 'policy'):
-            logprob = self.policy(latent)
-        if hasattr(self, 'value'):
-            value = self.value(latent)
-        if hasattr(self, 'policy'):
             if hasattr(self, 'value'):
-                return logprob, value
+                return self.policy(latent), self.value(latent)
             else:
-                return logprob
+                return self.policy(latent)
         else:
-            return value
+            return self.value(latent)
 
 
 class Flatten(nn.Module):
@@ -108,16 +104,12 @@ class SMALLCNN(nn.Module):
     def forward(self, x):
         latent = self.out(self.feature(x / 255.0))
         if hasattr(self, 'policy'):
-            logprob = self.policy(latent)
-        if hasattr(self, 'value'):
-            value = self.value(latent)
-        if hasattr(self, 'policy'):
             if hasattr(self, 'value'):
-                return logprob, value
+                return self.policy(latent), self.value(latent)
             else:
-                return logprob
+                return self.policy(latent)
         else:
-            return value
+            return self.value(latent)
 
 
 class CNN(nn.Module):
@@ -151,18 +143,14 @@ class CNN(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        latent = self.feature(x / 255.0)
-        if hasattr(self, 'policy'):
-            logprob = self.policy(latent)
-        if hasattr(self, 'value'):
-            value = self.value(latent)
+        latent = self.out(self.feature(x / 255.0))
         if hasattr(self, 'policy'):
             if hasattr(self, 'value'):
-                return logprob, value
+                return self.policy(latent), self.value(latent)
             else:
-                return logprob
+                return self.policy(latent)
         else:
-            return value
+            return self.value(latent)
 
 
 def get_optimizer(name, parameters, lr):

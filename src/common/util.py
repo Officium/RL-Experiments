@@ -193,11 +193,10 @@ class Trajectories(object):
             last_gae = 0
             for i in reversed(range(n)):
                 flag = 1 - d[i]
-                if i != n - 1:
-                    next_value = v[i + 1]
                 delta = r[i] + self._gamma * next_value * flag - v[i]
                 delta += self._gamma * self._gae_lam * flag * last_gae
                 gae[:, i] = last_gae = delta
+                next_value = v[i]
             for i in range(n):
                 self._records['r'][i] = gae[:, i] + v[i]
         else:  # discount reward
@@ -219,3 +218,7 @@ class Trajectories(object):
             self._records[key].clear()
 
         return tuple(res)
+
+
+def to_fp32(array, device):
+    return torch.from_numpy(array.astype(np.float32)).to(device)

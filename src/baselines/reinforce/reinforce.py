@@ -5,7 +5,7 @@ import torch
 
 from common.logger import get_logger
 from common.models import build_policy, get_optimizer
-from common.util import Trajectories
+from common.util import to_fp32, Trajectories
 
 
 def learn(device,
@@ -76,7 +76,7 @@ def _generate(device, env, policy,
     for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp = policy(torch.Tensor(o).to(device))
+            logp = policy(to_fp32(o, device))
             a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
 
         # take action in env
