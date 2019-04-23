@@ -1,4 +1,5 @@
 import os
+import time
 from collections import deque
 
 import torch
@@ -37,6 +38,7 @@ def learn(device,
     n_iter = 0
     total_timesteps = 0
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
+    start_ts = time.time()
     while True:
         try:
             batch = generator.__next__()
@@ -56,6 +58,8 @@ def learn(device,
 
         n_iter += 1
         logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
+        fps = int(total_timesteps / (time.time() - start_ts))
+        logger.info('Total timesteps {} FPS {}'.format(total_timesteps, fps))
         for k, v in infos.items():
             v = (sum(v) / len(v)) if v else float('nan')
             logger.info('{}: {:.6f}'.format(k, v))

@@ -1,4 +1,5 @@
 import os
+import time
 from collections import deque
 from itertools import chain
 from math import ceil
@@ -42,16 +43,18 @@ def learn(device,
 
     policy = build_policy(env, network, estimate_value=True).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
+    number_timesteps = number_timesteps // nenv
     generator = _generate(
         device, env, policy,
         number_timesteps, gamma, gae_lam, timesteps_per_batch
     )
-    max_iter = number_timesteps // (timesteps_per_batch * nenv)
+    max_iter = number_timesteps // timesteps_per_batch
     scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
     n_iter = 0
     total_timesteps = 0
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
+    start_ts = time.time()
     while True:
         scheduler.step()
         try:
@@ -105,7 +108,8 @@ def learn(device,
 
         n_iter += 1
         logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
-        logger.info('Total timesteps {}'.format(total_timesteps))
+        fps = int(total_timesteps / (time.time() - start_ts))
+        logger.info('Total timesteps {} FPS {}'.format(total_timesteps, fps))
         for k, v in chain(infos.items(), records.items()):
             v = (sum(v) / len(v)) if v else float('nan')
             logger.info('{}: {:.6f}'.format(k, v))

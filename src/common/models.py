@@ -102,7 +102,7 @@ class SMALLCNN(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        latent = self.out(self.feature(x / 255.0))
+        latent = self.feature(x / 255.0)
         if hasattr(self, 'policy'):
             if hasattr(self, 'value'):
                 return self.policy(latent), self.value(latent)
@@ -116,9 +116,9 @@ class CNN(nn.Module):
     def __init__(self, in_shape, policy_dim, value_dim):
         super().__init__()
         c, h, w = in_shape
-        cnn_out_dim = 64 * ((h - 14) // 4) * ((w - 14) // 4)
+        cnn_out_dim = 64 * ((h - 28) // 8) * ((w - 28) // 8)
         self.feature = nn.Sequential(
-            nn.Conv2d(c, 32, 4, 2),
+            nn.Conv2d(c, 32, 8, 4),
             nn.ReLU(True),
             nn.Conv2d(32, 64, 4, 2),
             nn.ReLU(True),
@@ -143,7 +143,7 @@ class CNN(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
-        latent = self.out(self.feature(x / 255.0))
+        latent = self.feature(x / 255.0)
         if hasattr(self, 'policy'):
             if hasattr(self, 'value'):
                 return self.policy(latent), self.value(latent)
