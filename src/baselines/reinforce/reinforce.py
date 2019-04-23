@@ -1,10 +1,11 @@
 import os
+from collections import deque
 
 import torch
 
 from common.logger import get_logger
 from common.models import build_policy, get_optimizer
-from common.util import set_global_seeds, Trajectories
+from common.util import Trajectories
 
 
 def learn(device,
@@ -27,7 +28,6 @@ def learn(device,
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
-    set_global_seeds(env, seed)
 
     policy = build_policy(env, network).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
@@ -35,6 +35,7 @@ def learn(device,
                           number_timesteps, gamma, timesteps_per_batch)
 
     n_iter = 0
+    infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     while True:
         try:
             batch = generator.__next__()
@@ -42,6 +43,9 @@ def learn(device,
             break
 
         b_o, b_a, b_r, info = batch
+        for d in info:
+            infos['eplenmean'].append(d['l'])
+            infos['eprewmean'].append(d['r'])
         b_logp = policy(b_o).gather(1, b_a)
         loss = -(b_logp * b_r).sum()  # likelihood ratio
         optimizer.zero_grad()
@@ -49,10 +53,9 @@ def learn(device,
         optimizer.step()
 
         n_iter += 1
-        logger.info('{} Iter {} {}'.format('=' * 30, n_iter, '=' * 30))
-        for k, v in info.items():
-            if isinstance(v, list):
-                v = (sum(v) / len(v)) if v else 0
+        logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
+        for k, v in infos.items():
+            v = (sum(v) / len(v)) if v else float('nan')
             logger.info('{}: {:.6f}'.format(k, v))
         if save_interval and n_iter % save_interval == 0:
             torch.save([policy.state_dict(), optimizer.state_dict()],
@@ -62,25 +65,27 @@ def learn(device,
 def _generate(device, env, policy,
               number_timesteps, gamma, timesteps_per_batch):
     """ Generate trajectories """
-    record = ['new', 'o', 'a', 'r', 'done']
+    record = ['o', 'a', 'r', 'done']
     export = ['o', 'a', 'r']
     trajectories = Trajectories(record, export, device, gamma)
 
-    o, new = env.reset(), True
-    for n in range(number_timesteps):
+    o = env.reset()
+    infos = []
+    for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp = policy(torch.Tensor(o).unsqueeze(0).to(device))
-            a = logp.exp().multinomial(1).cpu().numpy()[0, 0]
+            logp = policy(torch.Tensor(o).to(device))
+            a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
 
         # take action in env
         o_, r, done, info = env.step(a)
+        for d in info:
+            if d.get('episode'):
+                infos.append(d['episode'])
 
         # store batch data and update observation
-        trajectories.append(new, o, a, r, done)
-        if len(trajectories) % timesteps_per_batch == 0:
-            yield trajectories.export()
-        if done:
-            o, new = env.reset(), True
-        else:
-            o, new = o_, False
+        trajectories.append(o, a, r, done)
+        if n % timesteps_per_batch == 0:
+            yield trajectories.export() + (infos, )
+            infos.clear()
+        o = o_

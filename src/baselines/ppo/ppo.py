@@ -10,11 +10,11 @@ from torch.utils.data import DataLoader
 
 from common.logger import get_logger
 from common.models import build_policy, get_optimizer
-from common.util import set_global_seeds, Trajectories
+from common.util import Trajectories
 
 
 def learn(device,
-          env, seed,
+          env, nenv, seed,
           number_timesteps,
           network, optimizer,
           save_path, save_interval,
@@ -39,7 +39,6 @@ def learn(device,
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
-    set_global_seeds(env, seed)
 
     policy = build_policy(env, network, estimate_value=True).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
@@ -47,7 +46,7 @@ def learn(device,
         device, env, policy,
         number_timesteps, gamma, gae_lam, timesteps_per_batch
     )
-    max_iter = number_timesteps // timesteps_per_batch
+    max_iter = number_timesteps // (timesteps_per_batch * nenv)
     scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
     n_iter = 0
@@ -60,8 +59,9 @@ def learn(device,
             break
 
         *data, info = batch
-        for k, v in info.items():
-            infos[k].append(v)
+        for d in info:
+            infos['eplenmean'].append(d['l'])
+            infos['eprewmean'].append(d['r'])
         batch_size = ceil(data[0].size(0) / nminibatches)
         loader = DataLoader(list(zip(*data)), batch_size)
         records = {'pg': [], 'v': [], 'ent': [], 'kl': [], 'clipfrac': []}
@@ -102,7 +102,7 @@ def learn(device,
                 records['clipfrac'].append(clipfrac)
 
         n_iter += 1
-        logger.info('{} Iter {} {}'.format('=' * 30, n_iter, '=' * 30))
+        logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
         for k, v in chain(infos.items(), records.items()):
             v = (sum(v) / len(v)) if v else float('nan')
             logger.info('{}: {:.6f}'.format(k, v))
@@ -114,33 +114,31 @@ def learn(device,
 def _generate(device, env, policy,
               number_timesteps, gamma, gae_lam, timesteps_per_batch):
     """ Generate trajectories """
-    record = ['new', 'o', 'a', 'r', 'done', 'logp', 'vpred']
+    record = ['o', 'a', 'r', 'done', 'logp', 'vpred']
     export = ['o', 'a', 'r', 'logp', 'vpred']
     trajectories = Trajectories(record, export, device, gamma, gae_lam)
 
-    o, new = env.reset(), True
-    for n in range(number_timesteps):
+    o = env.reset()
+    infos = []
+    for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp, v = policy(torch.Tensor(o).unsqueeze(0).to(device))
-            a = logp.exp().multinomial(1).cpu().numpy()[0, 0]
+            logp, v = policy(torch.Tensor(o).to(device))
+            a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
             logp = logp.cpu().numpy()[0, a]
-            v = v.cpu().numpy()[0, 0]
+            v = v.cpu().numpy()[:, 0]
 
         # take action in env
         o_, r, done, info = env.step(a)
+        for d in info:
+            if d.get('episode'):
+                infos.append(d['episode'])
 
         # store batch data and update observation
-        trajectories.append(new, o, a, r, done, logp, v)
-        if len(trajectories) % timesteps_per_batch == 0:
+        trajectories.append(o, a, r, done, logp, v)
+        if n % timesteps_per_batch == 0:
             with torch.no_grad():
-                if done:
-                    v_ = 0
-                else:
-                    v_ = policy(torch.Tensor(o_).unsqueeze(0).to(device))[1]
-                    v_ = v_.cpu().numpy()[0, 0]
-            yield trajectories.export(v_)
-        if done:
-            o, new = env.reset(), True
-        else:
-            o, new = o_, False
+                v_ = policy(torch.Tensor(o_).to(device))[1].numpy()[:, 0]
+            yield trajectories.export(v_ * (1 - done)) + (infos, )
+            infos.clear()
+        o = o_

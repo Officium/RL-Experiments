@@ -11,7 +11,7 @@ from torch.nn.utils.convert_parameters import parameters_to_vector
 
 from common.logger import get_logger
 from common.models import build_policy, build_value, get_optimizer
-from common.util import set_global_seeds, Trajectories
+from common.util import Trajectories
 
 
 def learn(device,
@@ -47,5 +47,4 @@ def learn(device,
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
-    set_global_seeds(env, seed)
     logger.critical('TRPO is not implemented! Welcome any contributions~')

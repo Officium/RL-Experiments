@@ -1,15 +1,20 @@
 """ Some utils
-Note that this file is an MPI-free version of
+Note that this file is is adapted from
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
 import random
 import re
+from functools import partial
 from importlib import import_module
+from multiprocessing import cpu_count
 
 import gym
-import gym.wrappers
 import numpy as np
 import torch
+try:
+    from mpi4py import MPI
+except ImportError:
+    MPI = None
 
 from common.wrappers import *
 
@@ -22,18 +27,57 @@ for _env in gym.envs.registry.all():
 
 def build_env(env_id, algorithm, env_type, **kwargs):
     """ Build env based on options """
+    seed = kwargs['seed']
+    nenv = kwargs['nenv']
+    reward_scale = kwargs.get('reward_scale', 1)
     if env_type == 'atari':
-        env = make_atari(env_id)
-        env = wrap_deepmind(env, frame_stack=True)
+        if algorithm == 'dqn':
+            env = make_env(env_id, env_type, seed, reward_scale)
+        else:
+            env = make_vec_env(env_id, env_type, nenv, seed, reward_scale)
+    elif env_type == 'classic_control':
+        env = make_vec_env(env_id, env_type, 1, seed, reward_scale, False)
     else:
+        raise NotImplementedError
+
+    return env
+
+
+def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
+    """ Make env """
+    if env_type == 'atari':
         env = gym.make(env_id)
-        if algorithm != 'her' and \
-                isinstance(env.observation_space, gym.spaces.Dict):
-            keys = env.observation_space.spaces.keys()
-            env = gym.wrappers.FlattenDictWrapper(env, dict_keys=list(keys))
+        assert 'NoFrameskip' in env.spec.id
+        env = NoopResetEnv(env, noop_max=30)
+        env = MaxAndSkipEnv(env, skip=4)
+        # deepmind wrap
+        env = EpisodicLifeEnv(env)
+        if 'FIRE' in env.unwrapped.get_action_meanings():
+            env = FireResetEnv(env)
+        env = WarpFrame(env)
+        env = ClipRewardEnv(env)
+        if frame_stack:
+            env = FrameStack(env, 4)
+    elif env_type == 'classic_control':
+        env = gym.make(env_id)
+    else:
+        raise NotImplementedError
+    if reward_scale != 1:
+        env = RewardScaler(env, reward_scale)
+    env.seed(seed)
+    return env
 
-    env = RewardScaler(env, kwargs.get('reward_scale', 1))
 
+def make_vec_env(env_id, env_type, nenv, seed, reward_scale, frame_stack=True):
+    """ Make vectorized env """
+    mpi_rank = MPI.COMM_WORLD.Get_rank() if MPI else 0
+    seed = seed + 10000 * mpi_rank
+    env = SubprocVecEnv([
+        partial(make_env, env_id, env_type, seed + i, reward_scale, False)
+        for i in range(nenv)
+    ])
+    if frame_stack:
+        env = VecFrameStack(env, 4)
     return env
 
 
@@ -54,7 +98,9 @@ def get_algorithm_module(algorithm, submodule):
 
 def learn(env_id, algorithm, **kwargs):
     """ Learn entry """
+    set_global_seeds(kwargs['seed'])
     env_type = id2type[env_id]
+    kwargs['nenv'] = kwargs['nenv'] or cpu_count()
     env = build_env(env_id, algorithm, env_type, **kwargs)
     algorithm = algorithm.lower()
     specific_options = get_algorithm_defaults(env_type, algorithm)
@@ -88,8 +134,7 @@ def parse_all_args(parser):
     return common_options, other_options
 
 
-def set_global_seeds(env, seed):
-    env.seed(seed)
+def set_global_seeds(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -105,16 +150,14 @@ class Trajectories(object):
     gamma (float): reward gamma
     gae_lam (float): gae lambda
 
-    Note that
-    `new` describe the current timestamp
-    `done` describe the next timestamp
+    Note that `done` describe the next timestamp
     """
-    SUPPORT_KEYS = {'new', 'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
+    SUPPORT_KEYS = {'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
 
     def __init__(self, record_keys, export_keys, device, gamma, gae_lam=1.0):
         assert set(record_keys).issubset(Trajectories.SUPPORT_KEYS)
         assert set(export_keys).issubset(record_keys)
-        assert {'new', 'o', 'a', 'r', 'done'}.issubset(set(record_keys))
+        assert {'o', 'a', 'r', 'done'}.issubset(set(record_keys))
         self._keys = record_keys
         self._records = dict()
         for key in record_keys:
@@ -123,16 +166,14 @@ class Trajectories(object):
         self._device = device
         self._gamma = gamma
         self._gae_lam = gae_lam
-        self._offsets = {'new': [], 'r': []}
+        self._offsets = {'done': [], 'r': []}
 
     def append(self, *records):
         assert len(records) == len(self._keys)
         for key, record in zip(self._keys, records):
-            if key == 'new':
-                record = int(record)
-                self._offsets['new'].append(record)
             if key == 'done':
-                record = int(record)
+                record = record.astype(int)
+                self._offsets['done'].append(record)
             if key == 'r':
                 self._offsets['r'].append(record)
             self._records[key].append(record)
@@ -144,10 +185,11 @@ class Trajectories(object):
         # estimate discounted reward
         d = self._records['done']
         r = self._records['r']
-        n = len(self._records['r'])
+        n = len(self)
+        nenv = r[0].shape[0]
         if 'vpred' in self._keys and self._gae_lam != 1:  # gae estimation
             v = self._records['vpred']
-            gae = np.empty(n)
+            gae = np.empty((nenv, n))
             last_gae = 0
             for i in reversed(range(n)):
                 flag = 1 - d[i]
@@ -155,9 +197,9 @@ class Trajectories(object):
                     next_value = v[i + 1]
                 delta = r[i] + self._gamma * next_value * flag - v[i]
                 delta += self._gamma * self._gae_lam * flag * last_gae
-                gae[i] = last_gae = delta
+                gae[:, i] = last_gae = delta
             for i in range(n):
-                self._records['r'][i] = gae[i] + v[i]
+                self._records['r'][i] = gae[:, i] + v[i]
         else:  # discount reward
             for i in reversed(range(n - 1)):
                 self._records['r'][i] += self._gamma * r[i + 1] * (1 - d[i])
@@ -165,35 +207,16 @@ class Trajectories(object):
         # convert to tensor
         res = []
         for key in self._export_keys:
-            tensor = torch.Tensor(self._records[key]).to(self._device)
+            shape = (n * nenv, ) + self._records[key][0].shape[1:]
+            data = np.asarray(self._records[key]).reshape(shape)
+            tensor = torch.from_numpy(data).to(self._device)
             if key == 'o':
                 tensor = tensor.float()
             elif key == 'a':
-                if isinstance(self._records[key][0], np.int64):
-                    tensor = tensor.long().unsqueeze(1)
-                else:
-                    tensor = tensor.float()  # continuous case
+                tensor = tensor.long().unsqueeze(1)
             elif key in {'new', 'r', 'done', 'logp', 'p', 'vpred'}:
                 tensor = tensor.float().unsqueeze(1)
             res.append(tensor)
-
-        # calculate log infos and append them to the result
-        offset_len = len(self._offsets['new'])
-        assert self._offsets['new'][0]
-        for i in range(1, offset_len)[::-1]:
-            if self._offsets['new'][i]:
-                epnum = sum(self._offsets['new'][:i])
-                res.append({
-                    # average episode length
-                    'eplenmean': i * 1.0 / epnum,
-                    # average episode reward
-                    'eprewmean': sum(self._offsets['r'][:i]) * 1.0 / epnum
-                })
-                self._offsets['r'] = self._offsets['r'][i:]
-                self._offsets['new'] = self._offsets['new'][i:]
-                break
-        else:
-            res.append(dict())
 
         for key in self._keys:
             self._records[key].clear()

@@ -5,7 +5,7 @@ from torch.optim import Adam
 
 def build_policy(env, name, estimate_value=False, estimate_q=False):
     name = name.upper()
-    in_dim = env.reset().shape
+    in_dim = env.observation_space.shape
     if name == 'MLP':
         in_dim = flatten_dim(in_dim)
         policy_dim = env.action_space.n
@@ -79,10 +79,10 @@ class Flatten(nn.Module):
 class SMALLCNN(nn.Module):
     def __init__(self, in_shape, policy_dim, value_dim):
         super().__init__()
-        h, w = in_shape[1], in_shape[2]
+        c, h, w = in_shape
         cnn_out_dim = 16 * ((h - 6) // 4) * ((w - 6) // 4)
         self.feature = nn.Sequential(
-            nn.Conv2d(in_shape[0], 8, 4, 2),
+            nn.Conv2d(c, 8, 4, 2),
             nn.ReLU(True),
             nn.Conv2d(8, 16, 4, 2),
             nn.ReLU(True),
@@ -123,10 +123,10 @@ class SMALLCNN(nn.Module):
 class CNN(nn.Module):
     def __init__(self, in_shape, policy_dim, value_dim):
         super().__init__()
-        h, w = in_shape[1], in_shape[2]
+        c, h, w = in_shape
         cnn_out_dim = 64 * ((h - 14) // 4) * ((w - 14) // 4)
         self.feature = nn.Sequential(
-            nn.Conv2d(in_shape[0], 32, 4, 2),
+            nn.Conv2d(c, 32, 4, 2),
             nn.ReLU(True),
             nn.Conv2d(32, 64, 4, 2),
             nn.ReLU(True),

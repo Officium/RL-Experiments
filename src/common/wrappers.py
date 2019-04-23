@@ -1,5 +1,9 @@
-""" Wrappers """
+""" Wrappers
+Note that this file is is adapted from `https://pypi.org/project/gym-vec-env/`,
+`https://github.com/openai/baselines/blob/master/baselines/common/*_wrappers.py`
+"""
 from collections import deque
+from multiprocessing import Process, Pipe
 
 import cv2
 import gym
@@ -8,8 +12,6 @@ from gym import spaces
 
 
 __all__ = (
-    'make_atari',  # make atari env
-    'wrap_deepmind',  # deepmind-style wrapper
     'TimeLimit',  # Time limit wrapper
     'NoopResetEnv',  # Run random number of no-ops on reset
     'FireResetEnv',  # Reset wrapper for envs with fire action
@@ -18,9 +20,10 @@ __all__ = (
     'ClipRewardEnv',  # clip reward wrapper
     'WarpFrame',  # warp observation wrapper
     'FrameStack',  # stack frame wrapper
-    'ScaledFloatFrame',  # scale frame to [0, 1] by divide 255.0
     'LazyFrames',  # lazy store wrapper
     'RewardScaler',  # reward scale
+    'SubprocVecEnv',  # vectorized env wrapper
+    'VecFrameStack',  # stack frames in vectorized env
 )
 cv2.ocl.setUseOpenCL(False)
 
@@ -180,7 +183,7 @@ class WarpFrame(gym.ObservationWrapper):
         self.width = width
         self.height = height
         self.grayscale = grayscale
-        shape = (self.height, self.width, 1 if self.grayscale else 3)
+        shape = (1 if self.grayscale else 3, self.height, self.width)
         self.observation_space = spaces.Box(
             low=0, high=255, shape=shape, dtype=np.uint8
         )
@@ -205,7 +208,7 @@ class FrameStack(gym.Wrapper):
         self.k = k
         self.frames = deque([], maxlen=k)
         shp = env.observation_space.shape
-        shape = (shp[:-1] + (shp[-1] * k, ))
+        shape = (shp[0] * k, ) + shp[1:]
         self.observation_space = spaces.Box(
             low=0, high=255, shape=shape, dtype=env.observation_space.dtype
         )
@@ -226,21 +229,6 @@ class FrameStack(gym.Wrapper):
         return LazyFrames(list(self.frames))
 
 
-class ScaledFloatFrame(gym.ObservationWrapper):
-    def __init__(self, env):
-        gym.ObservationWrapper.__init__(self, env)
-        shape = env.observation_space.shape
-        self.observation_space = gym.spaces.Box(
-            low=0, high=1, shape=shape, dtype=np.float32
-        )
-
-    @staticmethod
-    def observation(observation):
-        # careful! This undoes the memory optimization, use
-        # with smaller replay buffers only.
-        return np.array(observation).astype(np.float32) / 255.0
-
-
 class LazyFrames(object):
     def __init__(self, frames):
         """This object ensures that common frames between the observations are
@@ -255,7 +243,7 @@ class LazyFrames(object):
 
     def _force(self):
         if self._out is None:
-            self._out = np.concatenate(self._frames, axis=-1)
+            self._out = np.concatenate(self._frames, axis=-3)
             self._frames = None
         return self._out
 
@@ -284,28 +272,182 @@ class RewardScaler(gym.RewardWrapper):
         return reward * self.scale
 
 
-def make_atari(env_id, max_episode_steps=None):
-    env = gym.make(env_id)
-    assert 'NoFrameskip' in env.spec.id
-    env = NoopResetEnv(env, noop_max=30)
-    env = MaxAndSkipEnv(env, skip=4)
-    if max_episode_steps is not None:
-        env = TimeLimit(env, max_episode_steps=max_episode_steps)
-    return env
+class VecFrameStack(object):
+    def __init__(self, env, k):
+        self.env = env
+        self.k = k
+        self.action_space = env.action_space
+        self.frames = deque([], maxlen=k)
+        shp = env.observation_space.shape
+        shape = (shp[0] * k, ) + shp[1:]
+        self.observation_space = spaces.Box(
+            low=0, high=255, shape=shape, dtype=env.observation_space.dtype
+        )
+
+    def reset(self):
+        ob = self.env.reset()
+        for _ in range(self.k):
+            self.frames.append(ob)
+        return np.asarray(self._get_ob())
+
+    def step(self, action):
+        ob, reward, done, info = self.env.step(action)
+        self.frames.append(ob)
+        return np.asarray(self._get_ob()), reward, done, info
+
+    def _get_ob(self):
+        assert len(self.frames) == self.k
+        return LazyFrames(list(self.frames))
 
 
-def wrap_deepmind(env, episode_life=True,
-                  clip_rewards=True, frame_stack=False, scale=False):
-    """Configure environment for DeepMind-style Atari."""
-    if episode_life:
-        env = EpisodicLifeEnv(env)
-    if 'FIRE' in env.unwrapped.get_action_meanings():
-        env = FireResetEnv(env)
-    env = WarpFrame(env)
-    if scale:
-        env = ScaledFloatFrame(env)
-    if clip_rewards:
-        env = ClipRewardEnv(env)
-    if frame_stack:
-        env = FrameStack(env, 4)
-    return env
+def _worker(remote, parent_remote, env_fn_wrapper):
+    parent_remote.close()
+    env = env_fn_wrapper.x()
+    while True:
+        cmd, data = remote.recv()
+        if cmd == 'step':
+            ob, reward, done, info = env.step(data)
+            if done:
+                ob = env.reset()
+            remote.send((ob, reward, done, info))
+        elif cmd == 'reset':
+            ob = env.reset()
+            remote.send(ob)
+        elif cmd == 'reset_task':
+            ob = env._reset_task()
+            remote.send(ob)
+        elif cmd == 'close':
+            remote.close()
+            break
+        elif cmd == 'get_spaces':
+            remote.send((env.observation_space, env.action_space))
+        else:
+            raise NotImplementedError
+
+
+class CloudpickleWrapper(object):
+    """
+    Uses cloudpickle to serialize contents
+    """
+    def __init__(self, x):
+        self.x = x
+
+    def __getstate__(self):
+        import cloudpickle
+        return cloudpickle.dumps(self.x)
+
+    def __setstate__(self, ob):
+        import pickle
+        self.x = pickle.loads(ob)
+
+
+class SubprocVecEnv(object):
+    def __init__(self, env_fns):
+        """
+        envs: list of gym environments to run in subprocesses
+        """
+        self.num_envs = len(env_fns)
+
+        self.waiting = False
+        self.closed = False
+        nenvs = len(env_fns)
+        self.nenvs = nenvs
+        self.remotes, self.work_remotes = zip(*[Pipe() for _ in range(nenvs)])
+        zipped_args = zip(self.work_remotes, self.remotes, env_fns)
+        self.ps = [
+            Process(target=_worker,
+                    args=(work_remote, remote, CloudpickleWrapper(env_fn)))
+            for (work_remote, remote, env_fn) in zipped_args
+        ]
+
+        for p in self.ps:
+            # if the main process crashes, we should not cause things to hang
+            p.daemon = True
+            p.start()
+        for remote in self.work_remotes:
+            remote.close()
+
+        self.remotes[0].send(('get_spaces', None))
+        observation_space, action_space = self.remotes[0].recv()
+        self.observation_space = observation_space
+        self.action_space = action_space
+
+        # monitor attributes
+        self.eprets = None
+        self.eplens = None
+
+    def _step_async(self, actions):
+        """
+            Tell all the environments to start taking a step
+            with the given actions.
+            Call step_wait() to get the results of the step.
+            You should not call this if a step_async run is
+            already pending.
+            """
+        for remote, action in zip(self.remotes, actions):
+            remote.send(('step', action))
+        self.waiting = True
+
+    def _step_wait(self):
+        """
+            Wait for the step taken with step_async().
+            Returns (obs, rews, dones, infos):
+             - obs: an array of observations, or a tuple of
+                    arrays of observations.
+             - rews: an array of rewards
+             - dones: an array of "episode done" booleans
+             - infos: a sequence of info objects
+            """
+        results = [remote.recv() for remote in self.remotes]
+        self.waiting = False
+        obs, rews, dones, infos = zip(*results)
+        return np.stack(obs), np.stack(rews), np.stack(dones), infos
+
+    def reset(self):
+        """
+            Reset all the environments and return an array of
+            observations, or a tuple of observation arrays.
+            If step_async is still doing work, that work will
+            be cancelled and step_wait() should not be called
+            until step_async() is invoked again.
+            """
+        self.eprets = np.zeros(self.num_envs, 'float')
+        self.eplens = np.zeros(self.num_envs, 'int')
+        for remote in self.remotes:
+            remote.send(('reset', None))
+        return np.stack([remote.recv() for remote in self.remotes])
+
+    def _reset_task(self):
+        for remote in self.remotes:
+            remote.send(('reset_task', None))
+        return np.stack([remote.recv() for remote in self.remotes])
+
+    def close(self):
+        if self.closed:
+            return
+        if self.waiting:
+            for remote in self.remotes:
+                remote.recv()
+        for remote in self.remotes:
+            remote.send(('close', None))
+        for p in self.ps:
+            p.join()
+            self.closed = True
+
+    def __len__(self):
+        return self.nenvs
+
+    def step(self, actions):
+        self._step_async(actions)
+        o_, r, d, info = self._step_wait()
+        self.eprets += r
+        self.eplens += 1
+        newinfos = []
+        zipped_data = zip(d, self.eprets, self.eplens, info)
+        for (i, (done, ret, eplen, info)) in enumerate(zipped_data):
+            if done:
+                self.eprets[i] = 0
+                self.eplens[i] = 0
+                info['episode'] = {'r': ret, 'l': eplen}
+            newinfos.append(info)
+        return o_, r, d, newinfos
