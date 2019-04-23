@@ -50,6 +50,7 @@ def learn(device,
     scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
     n_iter = 0
+    total_timesteps = 0
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     while True:
         scheduler.step()
@@ -62,6 +63,7 @@ def learn(device,
         for d in info:
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])
+        total_timesteps += data[0].size(0)
         batch_size = ceil(data[0].size(0) / nminibatches)
         loader = DataLoader(list(zip(*data)), batch_size)
         records = {'pg': [], 'v': [], 'ent': [], 'kl': [], 'clipfrac': []}
@@ -103,6 +105,7 @@ def learn(device,
 
         n_iter += 1
         logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
+        logger.info('Total timesteps {}'.format(total_timesteps))
         for k, v in chain(infos.items(), records.items()):
             v = (sum(v) / len(v)) if v else float('nan')
             logger.info('{}: {:.6f}'.format(k, v))
@@ -138,7 +141,7 @@ def _generate(device, env, policy,
         trajectories.append(o, a, r, done, logp, v)
         if n % timesteps_per_batch == 0:
             with torch.no_grad():
-                v_ = policy(torch.Tensor(o_).to(device))[1].numpy()[:, 0]
+                v_ = policy(torch.Tensor(o_).to(device))[1].cpu().numpy()[:, 0]
             yield trajectories.export(v_ * (1 - done)) + (infos, )
             infos.clear()
         o = o_

@@ -35,6 +35,7 @@ def learn(device,
                           number_timesteps, gamma, timesteps_per_batch)
 
     n_iter = 0
+    total_timesteps = 0
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     while True:
         try:
@@ -43,6 +44,7 @@ def learn(device,
             break
 
         b_o, b_a, b_r, info = batch
+        total_timesteps += b_o.size(0)
         for d in info:
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])

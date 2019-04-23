@@ -150,7 +150,7 @@ class Trajectories(object):
     gamma (float): reward gamma
     gae_lam (float): gae lambda
 
-    Note that `done` describe the next timestamp
+    Note that `done` describe the next timestep
     """
     SUPPORT_KEYS = {'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
 
@@ -207,15 +207,12 @@ class Trajectories(object):
         # convert to tensor
         res = []
         for key in self._export_keys:
+            dtype = np.long if key == 'a' else np.float32
             shape = (n * nenv, ) + self._records[key][0].shape[1:]
-            data = np.asarray(self._records[key]).reshape(shape)
+            data = np.asarray(self._records[key], dtype).reshape(shape)
             tensor = torch.from_numpy(data).to(self._device)
-            if key == 'o':
-                tensor = tensor.float()
-            elif key == 'a':
-                tensor = tensor.long().unsqueeze(1)
-            elif key in {'new', 'r', 'done', 'logp', 'p', 'vpred'}:
-                tensor = tensor.float().unsqueeze(1)
+            if key in {'a', 'r', 'done', 'logp', 'p', 'vpred'}:
+                tensor = tensor.unsqueeze(1)
             res.append(tensor)
 
         for key in self._keys:
