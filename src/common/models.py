@@ -157,7 +157,7 @@ def get_optimizer(name, parameters, lr):
     """ Get optimizer by name """
     name = name.upper()
     if name == 'ADAM':
-        return Adam(parameters, lr)
+        return Adam(parameters, lr, eps=1e-5)
     else:
         raise NotImplementedError
 

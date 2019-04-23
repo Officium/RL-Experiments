@@ -68,7 +68,7 @@ def learn(device,
             infos['eprewmean'].append(d['r'])
         total_timesteps += data[0].size(0)
         batch_size = ceil(data[0].size(0) / nminibatches)
-        loader = DataLoader(list(zip(*data)), batch_size)
+        loader = DataLoader(list(zip(*data)), batch_size, True)
         records = {'pg': [], 'v': [], 'ent': [], 'kl': [], 'clipfrac': []}
         for _ in range(opt_iter):
             for b_o, b_a, b_r, b_logp_old, b_v_old in loader:
@@ -76,9 +76,9 @@ def learn(device,
                 b_logp, b_v = policy(b_o)
                 entropy = -(b_logp * b_logp.exp()).sum(-1).mean()
                 b_logp = b_logp.gather(1, b_a)
-                advantage = b_r - b_v
+                adv = b_r - b_v
                 # highlight: this normalization gives better performance
-                advantage = (advantage - advantage.mean()) / advantage.std()
+                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
                 # update policy
                 c_b_v = b_v_old + (b_v - b_v_old).clamp(-cliprange, cliprange)
@@ -88,8 +88,8 @@ def learn(device,
                 ))  # highlight: Clip is also applied to value loss
                 ratio = (b_logp - b_logp_old).exp()
                 pgloss = torch.mean(torch.max(
-                    -advantage * ratio,
-                    -advantage * ratio.clamp(1 - cliprange, 1 + cliprange)
+                    -adv * ratio,
+                    -adv * ratio.clamp(1 - cliprange, 1 + cliprange)
                 ))
                 loss = pgloss + vf_coef * vloss - ent_coef * entropy
                 optimizer.zero_grad()
