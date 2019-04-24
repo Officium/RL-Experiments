@@ -2,6 +2,7 @@
 Note that this file is is adapted from
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
+import sys
 import random
 import re
 from functools import partial
@@ -29,7 +30,7 @@ def build_env(env_id, algorithm, env_type, **kwargs):
     """ Build env based on options """
     seed = kwargs['seed']
     nenv = kwargs['nenv']
-    reward_scale = kwargs.get('reward_scale', 1)
+    reward_scale = kwargs['reward_scale']
     if env_type == 'atari':
         if algorithm == 'dqn':
             env = make_env(env_id, env_type, seed, reward_scale)
@@ -100,7 +101,8 @@ def learn(env_id, algorithm, **kwargs):
     """ Learn entry """
     set_global_seeds(kwargs['seed'])
     env_type = id2type[env_id]
-    kwargs['nenv'] = kwargs['nenv'] or cpu_count()
+    ncpu = cpu_count() // (1 + (sys.platform == 'darwin'))
+    kwargs['nenv'] = kwargs['nenv'] or ncpu
     env = build_env(env_id, algorithm, env_type, **kwargs)
     algorithm = algorithm.lower()
     specific_options = get_algorithm_defaults(env_type, algorithm)
@@ -154,7 +156,8 @@ class Trajectories(object):
     """
     SUPPORT_KEYS = {'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
 
-    def __init__(self, record_keys, export_keys, device, gamma, gae_lam=1.0):
+    def __init__(self, record_keys, export_keys,
+                 device, gamma, ob_scale, gae_lam=1.0):
         assert set(record_keys).issubset(Trajectories.SUPPORT_KEYS)
         assert set(export_keys).issubset(record_keys)
         assert {'o', 'a', 'r', 'done'}.issubset(set(record_keys))
@@ -167,10 +170,13 @@ class Trajectories(object):
         self._gamma = gamma
         self._gae_lam = gae_lam
         self._offsets = {'done': [], 'r': []}
+        self._ob_scale = ob_scale
 
     def append(self, *records):
         assert len(records) == len(self._keys)
         for key, record in zip(self._keys, records):
+            if key != 'o':
+                assert len(record.shape) == 1
             if key == 'done':
                 record = record.astype(int)
                 self._offsets['done'].append(record)
@@ -200,6 +206,8 @@ class Trajectories(object):
             for i in range(n):
                 self._records['r'][i] = gae[:, i] + v[i]
         else:  # discount reward
+            if next_value is not None:
+                self._records['r'][-1] += self._gamma * next_value
             for i in reversed(range(n - 1)):
                 self._records['r'][i] += self._gamma * r[i + 1] * (1 - d[i])
 
@@ -210,6 +218,8 @@ class Trajectories(object):
             shape = (n * nenv, ) + self._records[key][0].shape[1:]
             data = np.asarray(self._records[key], dtype).reshape(shape)
             tensor = torch.from_numpy(data).to(self._device)
+            if key == 'o':
+                tensor.mul_(self._ob_scale)
             if key in {'a', 'r', 'done', 'logp', 'p', 'vpred'}:
                 tensor = tensor.unsqueeze(1)
             res.append(tensor)
@@ -220,5 +230,5 @@ class Trajectories(object):
         return tuple(res)
 
 
-def to_fp32(array, device):
-    return torch.from_numpy(array.astype(np.float32)).to(device)
+def scale_ob(array, device, scale):
+    return torch.from_numpy(array.astype(np.float32) * scale).to(device)

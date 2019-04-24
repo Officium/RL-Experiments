@@ -1,6 +1,8 @@
 """ Build policy/value/... networks and optimizers """
+import math
+
 import torch.nn as nn
-from torch.optim import Adam
+from torch.optim import Adam, RMSprop
 
 
 def build_policy(env, name, estimate_value=False, estimate_q=False):
@@ -41,17 +43,27 @@ class MLP(nn.Module):
         self.feature = nn.Sequential(
             Flatten(),
             nn.Linear(in_dim, 64),
-            nn.ReLU(True)
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh()
         )
+        for _, m in self.named_modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, math.sqrt(2))
+                nn.init.constant_(m.bias, 0)
 
         if policy_dim:
             self.policy = nn.Sequential(
                 nn.Linear(64, policy_dim),
                 nn.LogSoftmax(1)
             )
+            nn.init.orthogonal_(self.policy[0].weight, 1e-2)
+            nn.init.constant_(self.policy[0].bias, 0)
 
         if value_dim:
             self.value = nn.Linear(64, value_dim)
+            nn.init.orthogonal_(self.value.weight, 1)
+            nn.init.constant_(self.value.bias, 0)
 
     def forward(self, x):
         latent = self.feature(x)
@@ -78,7 +90,7 @@ class SMALLCNN(nn.Module):
         c, h, w = in_shape
         cnn_out_dim = 16 * ((h - 6) // 4) * ((w - 6) // 4)
         self.feature = nn.Sequential(
-            nn.Conv2d(c, 8, 4, 2),
+            nn.Conv2d(c, 8, 8, 4),
             nn.ReLU(True),
             nn.Conv2d(8, 16, 4, 2),
             nn.ReLU(True),
@@ -87,22 +99,26 @@ class SMALLCNN(nn.Module):
             nn.ReLU(True)
         )
 
+        for _, m in self.named_modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, math.sqrt(2))
+                nn.init.constant_(m.bias, 0)
+
         if policy_dim:
             self.policy = nn.Sequential(
                 nn.Linear(128, policy_dim),
                 nn.LogSoftmax(1)
             )
+            nn.init.orthogonal_(self.policy[0].weight, 1e-2)
+            nn.init.constant_(self.policy[0].bias, 0)
 
         if value_dim:
             self.value = nn.Linear(128, value_dim)
-
-        for _, m in self.named_modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+            nn.init.orthogonal_(self.value.weight, 1)
+            nn.init.constant_(self.value.bias, 0)
 
     def forward(self, x):
-        latent = self.feature(x / 255.0)
+        latent = self.feature(x)
         if hasattr(self, 'policy'):
             if hasattr(self, 'value'):
                 return self.policy(latent), self.value(latent)
@@ -123,27 +139,31 @@ class CNN(nn.Module):
             nn.Conv2d(32, 64, 4, 2),
             nn.ReLU(True),
             nn.Conv2d(64, 64, 3, 1),
+            nn.ReLU(True),
             Flatten(),
             nn.Linear(cnn_out_dim, 512),
             nn.ReLU(True)
         )
+        for _, m in self.named_modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, math.sqrt(2))
+                nn.init.constant_(m.bias, 0)
 
         if policy_dim:
             self.policy = nn.Sequential(
                 nn.Linear(512, policy_dim),
                 nn.LogSoftmax(1)
             )
+            nn.init.orthogonal_(self.policy[0].weight, 1e-2)
+            nn.init.constant_(self.policy[0].bias, 0)
 
         if value_dim:
             self.value = nn.Linear(512, value_dim)
-
-        for _, m in self.named_modules():
-            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
-                nn.init.xavier_normal_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+            nn.init.orthogonal_(self.value.weight, 1)
+            nn.init.constant_(self.value.bias, 0)
 
     def forward(self, x):
-        latent = self.feature(x / 255.0)
+        latent = self.feature(x)
         if hasattr(self, 'policy'):
             if hasattr(self, 'value'):
                 return self.policy(latent), self.value(latent)
@@ -158,6 +178,8 @@ def get_optimizer(name, parameters, lr):
     name = name.upper()
     if name == 'ADAM':
         return Adam(parameters, lr, eps=1e-5)
+    elif name == 'RMSPROP':
+        return RMSprop(parameters, lr, eps=1e-5)
     else:
         raise NotImplementedError
 

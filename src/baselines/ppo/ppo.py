@@ -11,14 +11,14 @@ from torch.utils.data import DataLoader
 
 from common.logger import get_logger
 from common.models import build_policy, get_optimizer
-from common.util import to_fp32, Trajectories
+from common.util import scale_ob, Trajectories
 
 
 def learn(device,
           env, nenv, seed,
           number_timesteps,
           network, optimizer,
-          save_path, save_interval,
+          save_path, save_interval, ob_scale,
           lr, gamma, grad_norm, timesteps_per_batch, ent_coef,
           vf_coef, gae_lam, nminibatches, opt_iter, cliprange, **kwargs):
     """
@@ -40,12 +40,14 @@ def learn(device,
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
+    logger.warn('This implementation of ppo only '
+                'support discrete action spaces now!')
 
     policy = build_policy(env, network, estimate_value=True).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
     number_timesteps = number_timesteps // nenv
     generator = _generate(
-        device, env, policy,
+        device, env, policy, ob_scale,
         number_timesteps, gamma, gae_lam, timesteps_per_batch
     )
     max_iter = number_timesteps // timesteps_per_batch
@@ -118,21 +120,23 @@ def learn(device,
                        os.path.join(save_path, '{}.{}'.format(name, n_iter)))
 
 
-def _generate(device, env, policy,
+def _generate(device, env, policy, ob_scale,
               number_timesteps, gamma, gae_lam, timesteps_per_batch):
     """ Generate trajectories """
     record = ['o', 'a', 'r', 'done', 'logp', 'vpred']
     export = ['o', 'a', 'r', 'logp', 'vpred']
-    trajectories = Trajectories(record, export, device, gamma, gae_lam)
+    trajectories = Trajectories(record, export,
+                                device, gamma, ob_scale, gae_lam)
 
     o = env.reset()
     infos = []
     for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp, v = policy(to_fp32(o, device))
-            a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
-            logp = logp.cpu().numpy()[0, a]
+            logp, v = policy(scale_ob(o, device, ob_scale))
+            a = logp.exp().multinomial(1)
+            logp = logp.gather(1, a).cpu().numpy()[:, 0]
+            a = a.cpu().numpy()[:, 0]
             v = v.cpu().numpy()[:, 0]
 
         # take action in env
@@ -145,7 +149,8 @@ def _generate(device, env, policy,
         trajectories.append(o, a, r, done, logp, v)
         if n % timesteps_per_batch == 0:
             with torch.no_grad():
-                v_ = policy(to_fp32(o_, device))[1].cpu().numpy()[:, 0]
-            yield trajectories.export(v_ * (1 - done)) + (infos, )
+                ob = scale_ob(o_, device, ob_scale)
+                v_ = policy(ob)[1].cpu().numpy()[:, 0] * (1 - done)
+            yield trajectories.export(v_) + (infos, )
             infos.clear()
         o = o_

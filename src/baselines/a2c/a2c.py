@@ -3,6 +3,8 @@ import time
 from collections import deque
 
 import torch
+import torch.nn as nn
+from torch.optim.lr_scheduler import LambdaLR
 
 from common.logger import get_logger
 from common.models import build_policy, get_optimizer
@@ -10,52 +12,77 @@ from common.util import scale_ob, Trajectories
 
 
 def learn(device,
-          env, seed,
+          env, nenv, seed,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
-          gamma, lr, timesteps_per_batch, **kwargs):
+          lr, gamma, grad_norm, timesteps_per_batch,
+          ent_coef, vf_coef, **kwargs):
     """
     Paper:
-    Williams R J. Simple Statistical Gradient-Following Algorithms for
-    Connectionist Reinforcement Learning[J]. Machine Learning, 1992: 229-256.
+    Mnih V, Badia A P, Mirza M, et al. Asynchronous methods for deep
+    reinforcement learning[C]// International Conference on Machine Learning.
+    2016: 1928-1937.
 
     Parameters:
     ----------
-        gamma (float): reward gamma
-        lr (float): learning rate
-        batch_episode (int): how many episodes will be sampled before update
+    gram_norm (float | None): grad norm
+    timesteps_per_batch (int): number of steps per update
+    ent_coef (float): policy entropy coefficient in the objective
+    vf_coef (float): value function loss coefficient in the objective
 
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
 
-    policy = build_policy(env, network).to(device)
+    policy = build_policy(env, network, estimate_value=True).to(device)
     optimizer = get_optimizer(optimizer, policy.parameters(), lr)
-    generator = _generate(device, env, policy, ob_scale,
-                          number_timesteps, gamma, timesteps_per_batch)
+    number_timesteps = number_timesteps // nenv
+    generator = _generate(
+        device, env, policy, ob_scale,
+        number_timesteps, gamma, timesteps_per_batch
+    )
+    max_iter = number_timesteps // timesteps_per_batch
+    scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
     n_iter = 0
     total_timesteps = 0
-    infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
+    infos = {k: deque(maxlen=100)
+             for k in ['eplenmean', 'eprewmean', 'pgloss', 'v', 'entropy']}
     start_ts = time.time()
     while True:
+        scheduler.step()
         try:
             batch = generator.__next__()
         except StopIteration:
             break
 
         b_o, b_a, b_r, info = batch
-        total_timesteps += b_o.size(0)
         for d in info:
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])
-        b_logp = policy(b_o).gather(1, b_a)
-        loss = -(b_logp * b_r).sum()  # likelihood ratio
+        total_timesteps += b_o[0].size(0)
+
+        # calculate advantange
+        b_logp, b_v = policy(b_o)
+        entropy = -(b_logp * b_logp.exp()).sum(-1).mean()
+        b_logp = b_logp.gather(1, b_a)
+        adv = b_r - b_v
+
+        # update policy
+        vloss = 0.5 * (b_v - b_r).pow(2).mean()
+        pgloss = -(adv * b_logp).mean()
+        loss = pgloss + vf_coef * vloss - ent_coef * entropy
         optimizer.zero_grad()
         loss.backward()
+        if grad_norm is not None:
+            nn.utils.clip_grad_norm_(policy.parameters(), grad_norm)
         optimizer.step()
 
+        # record logs
+        infos['pgloss'].append(pgloss.item())
+        infos['v'].append(vloss.item())
+        infos['entropy'].append(entropy.item())
         n_iter += 1
         logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
         fps = int(total_timesteps / (time.time() - start_ts))
@@ -80,7 +107,7 @@ def _generate(device, env, policy, ob_scale,
     for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp = policy(scale_ob(o, device, ob_scale))
+            logp, _ = policy(scale_ob(o, device, ob_scale))
             a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
 
         # take action in env
@@ -92,6 +119,9 @@ def _generate(device, env, policy, ob_scale,
         # store batch data and update observation
         trajectories.append(o, a, r, done)
         if n % timesteps_per_batch == 0:
-            yield trajectories.export() + (infos, )
+            with torch.no_grad():
+                ob = scale_ob(o_, device, ob_scale)
+                v_ = policy(ob)[1].cpu().numpy()[:, 0]
+            yield trajectories.export(v_ * (1 - done)) + (infos, )
             infos.clear()
         o = o_

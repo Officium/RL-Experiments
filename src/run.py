@@ -50,5 +50,6 @@ model = learn(
     algorithm=common_options.algorithm,
     network=common_options.network,
     optimizer=common_options.optimizer,
+    reward_scale=common_options.reward_scale,
     **other_options
 )
