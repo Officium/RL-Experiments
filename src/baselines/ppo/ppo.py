@@ -2,9 +2,9 @@ import os
 import time
 from collections import deque
 from itertools import chain
-from math import ceil
 
 import torch
+import torch.distributions
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
@@ -69,15 +69,17 @@ def learn(device,
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])
         total_timesteps += data[0].size(0)
-        batch_size = ceil(data[0].size(0) / nminibatches)
+        batch_size = data[0].size(0) // nminibatches
         loader = DataLoader(list(zip(*data)), batch_size, True)
         records = {'pg': [], 'v': [], 'ent': [], 'kl': [], 'clipfrac': []}
         for _ in range(opt_iter):
             for b_o, b_a, b_r, b_logp_old, b_v_old in loader:
                 # calculate advantange
-                b_logp, b_v = policy(b_o)
-                entropy = -(b_logp * b_logp.exp()).sum(-1).mean()
-                b_logp = b_logp.gather(1, b_a)
+                b_logits, b_v = policy(b_o)
+                b_v = b_v[:, 0]
+                dist = torch.distributions.Categorical(logits=b_logits)
+                entropy = dist.entropy().mean()
+                b_logp = dist.log_prob(b_a)
                 adv = b_r - b_v
                 # highlight: this normalization gives better performance
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
@@ -133,10 +135,11 @@ def _generate(device, env, policy, ob_scale,
     for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp, v = policy(scale_ob(o, device, ob_scale))
-            a = logp.exp().multinomial(1)
-            logp = logp.gather(1, a).cpu().numpy()[:, 0]
-            a = a.cpu().numpy()[:, 0]
+            logits, v = policy(scale_ob(o, device, ob_scale))
+            dist = torch.distributions.Categorical(logits=logits)
+            a = dist.sample()
+            logp = dist.log_prob(a).cpu().numpy()
+            a = a.cpu().numpy()
             v = v.cpu().numpy()[:, 0]
 
         # take action in env

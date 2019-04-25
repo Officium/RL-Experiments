@@ -3,6 +3,7 @@ import time
 from collections import deque
 
 import torch
+import torch.distributions
 
 from common.logger import get_logger
 from common.models import build_policy, get_optimizer
@@ -50,7 +51,9 @@ def learn(device,
         for d in info:
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])
-        b_logp = policy(b_o).gather(1, b_a)
+        b_logits = policy(b_o)
+        dist = torch.distributions.Categorical(logits=b_logits)
+        b_logp = dist.log_prob(b_a)
         loss = -(b_logp * b_r).sum()  # likelihood ratio
         optimizer.zero_grad()
         loss.backward()
@@ -80,8 +83,9 @@ def _generate(device, env, policy, ob_scale,
     for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp = policy(scale_ob(o, device, ob_scale))
-            a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
+            logits = policy(scale_ob(o, device, ob_scale))
+            dist = torch.distributions.Categorical(logits=logits)
+            a = dist.sample().cpu().numpy()
 
         # take action in env
         o_, r, done, info = env.step(a)

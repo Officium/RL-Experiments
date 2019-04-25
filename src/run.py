@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--env', type=str, required=True, help='environment ID')
 parser.add_argument('--algorithm', type=str, required=True, help='Algorithm')
 parser.add_argument('--nenv', type=int, default=0, help='parrallel number')
-parser.add_argument('--seed', type=int, default=42, help='random seed')
+parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--number_timesteps', type=float, default=1e6)
 parser.add_argument('--network', default=None,
                     help='mlp|cnn|lstm|cnnlstm|smallcnn')
@@ -32,7 +32,7 @@ parser.add_argument('--optimizer', type=str, default='adam')
 parser.add_argument('--reward_scale', type=float, default=1.0)
 parser.add_argument('--save_path', type=str, default='../checkpoints')
 parser.add_argument('--save_interval', type=int, default=0,
-                    help='Save video and model every x steps (0 = disabled)')
+                    help='save model every x steps (0 = disabled)')
 common_options, other_options = parse_all_args(parser)
 
 

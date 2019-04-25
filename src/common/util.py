@@ -1,5 +1,5 @@
 """ Some utils
-Note that this file is is adapted from
+Note that this file is a MPI-free version of
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
 import sys
@@ -12,10 +12,6 @@ from multiprocessing import cpu_count
 import gym
 import numpy as np
 import torch
-try:
-    from mpi4py import MPI
-except ImportError:
-    MPI = None
 
 from common.wrappers import *
 
@@ -71,8 +67,6 @@ def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
 
 def make_vec_env(env_id, env_type, nenv, seed, reward_scale, frame_stack=True):
     """ Make vectorized env """
-    mpi_rank = MPI.COMM_WORLD.Get_rank() if MPI else 0
-    seed = seed + 10000 * mpi_rank
     env = SubprocVecEnv([
         partial(make_env, env_id, env_type, seed + i, reward_scale, False)
         for i in range(nenv)
@@ -154,7 +148,7 @@ class Trajectories(object):
 
     Note that `done` describe the next timestep
     """
-    SUPPORT_KEYS = {'o', 'a', 'r', 'done', 'logp', 'p', 'vpred'}
+    SUPPORT_KEYS = {'o', 'a', 'r', 'done', 'logp', 'vpred'}
 
     def __init__(self, record_keys, export_keys,
                  device, gamma, ob_scale, gae_lam=1.0):
@@ -220,8 +214,6 @@ class Trajectories(object):
             tensor = torch.from_numpy(data).to(self._device)
             if key == 'o':
                 tensor.mul_(self._ob_scale)
-            if key in {'a', 'r', 'done', 'logp', 'p', 'vpred'}:
-                tensor = tensor.unsqueeze(1)
             res.append(tensor)
 
         for key in self._keys:

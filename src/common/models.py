@@ -53,12 +53,9 @@ class MLP(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
         if policy_dim:
-            self.policy = nn.Sequential(
-                nn.Linear(64, policy_dim),
-                nn.LogSoftmax(1)
-            )
-            nn.init.orthogonal_(self.policy[0].weight, 1e-2)
-            nn.init.constant_(self.policy[0].bias, 0)
+            self.policy = nn.Linear(64, policy_dim)
+            nn.init.orthogonal_(self.policy.weight, 1e-2)
+            nn.init.constant_(self.policy.bias, 0)
 
         if value_dim:
             self.value = nn.Linear(64, value_dim)
@@ -105,12 +102,9 @@ class SMALLCNN(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
         if policy_dim:
-            self.policy = nn.Sequential(
-                nn.Linear(128, policy_dim),
-                nn.LogSoftmax(1)
-            )
-            nn.init.orthogonal_(self.policy[0].weight, 1e-2)
-            nn.init.constant_(self.policy[0].bias, 0)
+            self.policy = nn.Linear(128, policy_dim)
+            nn.init.orthogonal_(self.policy.weight, 1e-2)
+            nn.init.constant_(self.policy.bias, 0)
 
         if value_dim:
             self.value = nn.Linear(128, value_dim)
@@ -150,12 +144,9 @@ class CNN(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
         if policy_dim:
-            self.policy = nn.Sequential(
-                nn.Linear(512, policy_dim),
-                nn.LogSoftmax(1)
-            )
-            nn.init.orthogonal_(self.policy[0].weight, 1e-2)
-            nn.init.constant_(self.policy[0].bias, 0)
+            self.policy = nn.Linear(512, policy_dim)
+            nn.init.orthogonal_(self.policy.weight, 1e-2)
+            nn.init.constant_(self.policy.bias, 0)
 
         if value_dim:
             self.value = nn.Linear(512, value_dim)
