@@ -2,12 +2,12 @@
 Note that this file is a MPI-free version of
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
-import sys
 import random
 import re
 from functools import partial
 from importlib import import_module
 from multiprocessing import cpu_count
+from sys import platform
 
 import gym
 import numpy as np
@@ -25,19 +25,20 @@ for _env in gym.envs.registry.all():
 def build_env(env_id, algorithm, env_type, **kwargs):
     """ Build env based on options """
     seed = kwargs['seed']
-    nenv = kwargs['nenv']
     reward_scale = kwargs['reward_scale']
+    nenv = kwargs['nenv'] or 1
     if env_type == 'atari':
         if algorithm == 'dqn':
             env = make_env(env_id, env_type, seed, reward_scale)
         else:
+            nenv = kwargs['nenv'] or cpu_count() // (1 + (platform == 'darwin'))
             env = make_vec_env(env_id, env_type, nenv, seed, reward_scale)
     elif env_type == 'classic_control':
-        env = make_vec_env(env_id, env_type, 1, seed, reward_scale, False)
+        env = make_vec_env(env_id, env_type, nenv, seed, reward_scale, False)
     else:
         raise NotImplementedError
 
-    return env
+    return env, nenv
 
 
 def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
@@ -95,9 +96,7 @@ def learn(env_id, algorithm, **kwargs):
     """ Learn entry """
     set_global_seeds(kwargs['seed'])
     env_type = id2type[env_id]
-    ncpu = cpu_count() // (1 + (sys.platform == 'darwin'))
-    kwargs['nenv'] = kwargs['nenv'] or ncpu
-    env = build_env(env_id, algorithm, env_type, **kwargs)
+    env, kwargs['nenv'] = build_env(env_id, algorithm, env_type, **kwargs)
     algorithm = algorithm.lower()
     specific_options = get_algorithm_defaults(env_type, algorithm)
     for k, v in kwargs.items():
