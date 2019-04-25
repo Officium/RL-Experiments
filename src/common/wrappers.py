@@ -1,5 +1,5 @@
-""" Wrappers
-Note that this file is is adapted from `https://pypi.org/project/gym-vec-env/`,
+""" Env wrappers
+Note that this file is adapted from `https://pypi.org/project/gym-vec-env` and
 `https://github.com/openai/baselines/blob/master/baselines/common/*_wrappers.py`
 """
 from collections import deque
