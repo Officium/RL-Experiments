@@ -45,12 +45,12 @@ def learn(device,
             batch = generator.__next__()
         except StopIteration:
             break
-
         b_o, b_a, b_r, info = batch
         total_timesteps += b_o.size(0)
         for d in info:
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])
+
         b_logits = policy(b_o)
         dist = torch.distributions.Categorical(logits=b_logits)
         b_logp = dist.log_prob(b_a)

@@ -3,6 +3,7 @@ import time
 from collections import deque
 
 import torch
+import torch.distributions
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -45,32 +46,30 @@ def learn(device,
     max_iter = number_timesteps // timesteps_per_batch
     scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
-    n_iter = 0
     total_timesteps = 0
     infos = {k: deque(maxlen=100)
              for k in ['eplenmean', 'eprewmean', 'pgloss', 'v', 'entropy']}
     start_ts = time.time()
-    while True:
+    for n_iter in range(1, max_iter + 1):
         scheduler.step()
-        try:
-            batch = generator.__next__()
-        except StopIteration:
-            break
 
-        b_o, b_a, b_r, info = batch
+        batch = generator.__next__()
+        b_o, b_a, b_r, b_v_old, info = batch
         for d in info:
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])
         total_timesteps += b_o[0].size(0)
 
         # calculate advantange
-        b_logp, b_v = policy(b_o)
-        entropy = -(b_logp * b_logp.exp()).sum(-1).mean()
-        b_logp = b_logp.gather(1, b_a)
-        adv = b_r - b_v
+        b_logits, b_v = policy(b_o)
+        b_v = b_v[:, 0]
+        dist = torch.distributions.Categorical(logits=b_logits)
+        entropy = dist.entropy().mean()
+        b_logp = dist.log_prob(b_a)
+        adv = b_r - b_v_old
 
         # update policy
-        vloss = 0.5 * (b_v - b_r).pow(2).mean()
+        vloss = (b_v - b_r).pow(2).mean()
         pgloss = -(adv * b_logp).mean()
         loss = pgloss + vf_coef * vloss - ent_coef * entropy
         optimizer.zero_grad()
@@ -83,7 +82,6 @@ def learn(device,
         infos['pgloss'].append(pgloss.item())
         infos['v'].append(vloss.item())
         infos['entropy'].append(entropy.item())
-        n_iter += 1
         logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
         fps = int(total_timesteps / (time.time() - start_ts))
         logger.info('Total timesteps {} FPS {}'.format(total_timesteps, fps))
@@ -98,8 +96,8 @@ def learn(device,
 def _generate(device, env, policy, ob_scale,
               number_timesteps, gamma, timesteps_per_batch):
     """ Generate trajectories """
-    record = ['o', 'a', 'r', 'done']
-    export = ['o', 'a', 'r']
+    record = ['o', 'a', 'r', 'done', 'vpred']
+    export = ['o', 'a', 'r', 'vpred']
     trajectories = Trajectories(record, export, device, gamma, ob_scale)
 
     o = env.reset()
@@ -107,8 +105,10 @@ def _generate(device, env, policy, ob_scale,
     for n in range(1, number_timesteps + 1):
         # sample action
         with torch.no_grad():
-            logp, _ = policy(scale_ob(o, device, ob_scale))
-            a = logp.exp().multinomial(1).cpu().numpy()[:, 0]
+            logits, v = policy(scale_ob(o, device, ob_scale))
+            dist = torch.distributions.Categorical(logits=logits)
+            a = dist.sample().cpu().numpy()
+            v = v.cpu().numpy()[:, 0]
 
         # take action in env
         o_, r, done, info = env.step(a)
@@ -117,11 +117,11 @@ def _generate(device, env, policy, ob_scale,
                 infos.append(d['episode'])
 
         # store batch data and update observation
-        trajectories.append(o, a, r, done)
+        trajectories.append(o, a, r, done, v)
         if n % timesteps_per_batch == 0:
             with torch.no_grad():
                 ob = scale_ob(o_, device, ob_scale)
-                v_ = policy(ob)[1].cpu().numpy()[:, 0]
-            yield trajectories.export(v_ * (1 - done)) + (infos, )
+                v_ = policy(ob)[1].cpu().numpy()[:, 0] * (1 - done)
+            yield trajectories.export(v_) + (infos, )
             infos.clear()
         o = o_

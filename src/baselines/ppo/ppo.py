@@ -53,17 +53,13 @@ def learn(device,
     max_iter = number_timesteps // timesteps_per_batch
     scheduler = LambdaLR(optimizer, lambda i_iter: 1 - i_iter / max_iter)
 
-    n_iter = 0
     total_timesteps = 0
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     start_ts = time.time()
-    while True:
+    for n_iter in range(1, max_iter + 1):
         scheduler.step()
-        try:
-            batch = generator.__next__()
-        except StopIteration:
-            break
 
+        batch = generator.__next__()
         *data, info = batch
         for d in info:
             infos['eplenmean'].append(d['l'])
@@ -80,8 +76,8 @@ def learn(device,
                 dist = torch.distributions.Categorical(logits=b_logits)
                 entropy = dist.entropy().mean()
                 b_logp = dist.log_prob(b_a)
-                adv = b_r - b_v
-                # highlight: this normalization gives better performance
+                # highlight: normalized advantage will gives better performance
+                adv = b_r - b_v_old
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
                 # update policy
@@ -110,7 +106,6 @@ def learn(device,
                 clipfrac = ((ratio - 1).abs() > cliprange).float().mean().item()
                 records['clipfrac'].append(clipfrac)
 
-        n_iter += 1
         logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
         fps = int(total_timesteps / (time.time() - start_ts))
         logger.info('Total timesteps {} FPS {}'.format(total_timesteps, fps))

@@ -10,9 +10,10 @@ from common.util import learn, parse_all_args
 """ Some notice """
 print("""
     Notes:
-        Log will be recorded at ../logs
-        CUDA usage is depend on `CUDA_VISIABLE_DEVICES`
-        Modifiy common/models.py to specify parameters of network and optimizer
+        CUDA usage is depend on `CUDA_VISIABLE_DEVICES`;
+        Log will be recorded at ../logs/{algorithm}_{seed};
+        If you need multi-gpu training or sampling, please add `nn.DataParallel` 
+        to `build_policy` or `build_value` in common/models.py.
 """)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -26,9 +27,8 @@ parser.add_argument('--algorithm', type=str, required=True, help='Algorithm')
 parser.add_argument('--nenv', type=int, default=0, help='parrallel number')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--number_timesteps', type=float, default=1e6)
-parser.add_argument('--network', default=None,
-                    help='mlp|cnn|lstm|cnnlstm|smallcnn')
-parser.add_argument('--optimizer', type=str, default='adam')
+parser.add_argument('--network', type=str, help='mlp|cnn|lstm|cnnlstm|smallcnn')
+parser.add_argument('--optimizer', type=str, help='Adam|RMSprop')
 parser.add_argument('--reward_scale', type=float, default=1.0)
 parser.add_argument('--save_path', type=str, default='../checkpoints')
 parser.add_argument('--save_interval', type=int, default=0,

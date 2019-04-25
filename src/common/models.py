@@ -28,11 +28,13 @@ def build_policy(env, name, estimate_value=False, estimate_q=False):
 def build_value(env, name, estimate_q=False):
     name = name.upper()
     out_dim = env.action_space.n if estimate_q else 1
-    in_dim = env.reset().shape
+    in_dim = env.observation_space.shape
     if name == 'MLP':
         return MLP(flatten_dim(in_dim), 0, out_dim)
     elif name == 'SMALLCNN':
         return SMALLCNN(in_dim, 0, out_dim)
+    elif name == 'CNN':
+        return CNN(in_dim, 0, out_dim)
     else:
         raise NotImplementedError
 
@@ -85,7 +87,7 @@ class SMALLCNN(nn.Module):
     def __init__(self, in_shape, policy_dim, value_dim):
         super().__init__()
         c, h, w = in_shape
-        cnn_out_dim = 16 * ((h - 6) // 4) * ((w - 6) // 4)
+        cnn_out_dim = 16 * ((h - 12) // 8) * ((w - 12) // 8)
         self.feature = nn.Sequential(
             nn.Conv2d(c, 8, 8, 4),
             nn.ReLU(True),
