@@ -4,7 +4,6 @@ import time
 from collections import deque
 from functools import partial
 
-import numpy as np
 import torch
 import torch.distributions
 from torch.nn.utils.convert_parameters import vector_to_parameters
@@ -90,13 +89,13 @@ def learn(device,
         # update policy
         policy.zero_grad()
         pg = _get_flatten_grad(optimgain, policy.parameters())
-        if np.allclose(pg, 0):
+        if torch.allclose(pg, torch.zeros_like(pg)):
             logger.warn("got zero gradient. not updating")
         else:
             fvp = partial(_fvp, b_o=b_o, policy=policy, cg_damping=cg_damping)
             stepdir = _cg(fvp, pg, cg_iters)
             shs = 0.5 * stepdir.dot(fvp(stepdir))
-            lm = np.sqrt(shs / max_kl)
+            lm = torch.sqrt(shs / max_kl)
             fullstep = stepdir / lm
             surrbefore = optimgain.item()
             stepsize = 1.0
@@ -116,7 +115,7 @@ def learn(device,
                     surrgain = (ratio * adv).mean()
                     optimgain = surrgain + entropy
                 improve = optimgain - surrbefore
-                if not np.isfinite(optimgain).all():
+                if not torch.isfinite(optimgain).all():
                     logger.info("Got non-finite value of losses -- bad!")
                 elif kl > max_kl * 1.5:
                     logger.info("violated KL constraint. shrinking step.")

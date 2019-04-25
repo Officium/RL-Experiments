@@ -58,7 +58,7 @@ def learn(device,
         for d in info:
             infos['eplenmean'].append(d['l'])
             infos['eprewmean'].append(d['r'])
-        total_timesteps += b_o[0].size(0)
+        total_timesteps += b_o.size(0)
 
         # calculate advantange
         b_logits, b_v = policy(b_o)
