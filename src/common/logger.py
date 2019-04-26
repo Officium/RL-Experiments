@@ -29,8 +29,8 @@ class _Logger(object):
     logLevel = logging.INFO
     logFormat = '%(levelname)s %(asctime)s %(processName)s %(process)s' \
                 '| %(filename)s | [line:%(lineno)d] | %(message)s'
-    logMaxByte = 20 * 1024 * 1024
-    logBackupCount = 10
+    logMaxByte = 0  # 20 * 1024 * 1024
+    logBackupCount = 0  # 10
 
     def __init__(self):
         self._loggers = dict()

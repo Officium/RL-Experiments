@@ -13,7 +13,7 @@ print("""
         CUDA usage is depend on `CUDA_VISIABLE_DEVICES`;
         Log will be recorded at ../logs/{algorithm}_{seed};
         If you need multi-gpu training or sampling, please add `nn.DataParallel` 
-        to `build_policy` or `build_value` in common/models.py.
+        to `build_policy`, `build_value` or `build_q` in common/models.py.
 """)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 

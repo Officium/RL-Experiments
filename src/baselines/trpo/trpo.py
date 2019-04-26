@@ -51,7 +51,7 @@ def learn(device,
                 'support discrete action spaces now!')
 
     policy = build_policy(env, network, estimate_value=False).to(device)
-    value = build_value(env, network, estimate_q=False).to(device)
+    value = build_value(env, network).to(device)
     optimizer = get_optimizer(optimizer, value.parameters(), vf_lr)
     number_timesteps = number_timesteps // nenv
     generator = _generate(

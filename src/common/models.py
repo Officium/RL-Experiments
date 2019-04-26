@@ -5,36 +5,44 @@ import torch.nn as nn
 from torch.optim import Adam, RMSprop
 
 
-def build_policy(env, name, estimate_value=False, estimate_q=False):
+def build_policy(env, name, estimate_value=False):
     name = name.upper()
     in_dim = env.observation_space.shape
     if name == 'MLP':
         in_dim = flatten_dim(in_dim)
         policy_dim = env.action_space.n
-        value_dim = policy_dim if estimate_q else int(estimate_value)
-        return MLP(in_dim, policy_dim, value_dim)
+        return MLP(in_dim, policy_dim, int(estimate_value))
     elif name == 'SMALLCNN':
         policy_dim = env.action_space.n
-        value_dim = policy_dim if estimate_q else int(estimate_value)
-        return SMALLCNN(in_dim, policy_dim, value_dim)
+        return SMALLCNN(in_dim, policy_dim, int(estimate_value))
     elif name == 'CNN':
         policy_dim = env.action_space.n
-        value_dim = policy_dim if estimate_q else int(estimate_value)
-        return CNN(in_dim, policy_dim, value_dim)
+        return CNN(in_dim, policy_dim, int(estimate_value))
     else:
         raise NotImplementedError
 
 
-def build_value(env, name, estimate_q=False):
+def build_value(env, name):
     name = name.upper()
-    out_dim = env.action_space.n if estimate_q else 1
     in_dim = env.observation_space.shape
     if name == 'MLP':
-        return MLP(flatten_dim(in_dim), 0, out_dim)
+        return MLP(flatten_dim(in_dim), 0, 1)
     elif name == 'SMALLCNN':
-        return SMALLCNN(in_dim, 0, out_dim)
+        return SMALLCNN(in_dim, 0, 1)
     elif name == 'CNN':
-        return CNN(in_dim, 0, out_dim)
+        return CNN(in_dim, 0, 1)
+    else:
+        raise NotImplementedError
+
+
+def build_q(env, name, dueling=False):
+    name = name.upper()
+    in_dim = env.observation_space.shape
+    out_dim = env.action_space.n
+    if name == 'MLP':
+        return QMLP(flatten_dim(in_dim), out_dim, dueling)
+    elif name == 'CNN':
+        return QCNN(in_dim, out_dim, dueling)
     else:
         raise NotImplementedError
 
@@ -164,6 +172,74 @@ class CNN(nn.Module):
                 return self.policy(latent)
         else:
             return self.value(latent)
+
+
+class QMLP(nn.Module):
+    def __init__(self, in_dim, out_dim, dueling):
+        super().__init__()
+        self.feature = nn.Sequential(
+            Flatten(),
+            nn.Linear(in_dim, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh()
+        )
+
+        self.q = nn.Linear(64, out_dim)
+        if dueling:
+            self.state = nn.Linear(64, 4)
+
+        for _, m in self.named_modules():
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        latent = self.feature(x)
+        qvalue = self.q(latent)
+        if hasattr(self, 'state'):
+            qvalue = self.state(latent) + qvalue - qvalue.mean(1, keepdim=True)
+        return qvalue
+
+
+class QCNN(nn.Module):
+    def __init__(self, in_shape, out_dim, dueling):
+        super().__init__()
+        c, h, w = in_shape
+        cnn_out_dim = 64 * ((h - 28) // 8) * ((w - 28) // 8)
+        self.feature = nn.Sequential(
+            nn.Conv2d(c, 32, 8, 4),
+            nn.ReLU(True),
+            nn.Conv2d(32, 64, 4, 2),
+            nn.ReLU(True),
+            nn.Conv2d(64, 64, 3, 1),
+            nn.ReLU(True),
+            Flatten(),
+        )
+
+        self.q = nn.Sequential(
+            nn.Linear(cnn_out_dim, 256),
+            nn.ReLU(True),
+            nn.Linear(256, out_dim)
+        )
+        if dueling:
+            self.state = nn.Sequential(
+                nn.Linear(cnn_out_dim, 256),
+                nn.ReLU(True),
+                nn.Linear(256, 1)
+            )
+
+        for _, m in self.named_modules():
+            if isinstance(m, nn.Conv2d) or isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        latent = self.feature(x)
+        qvalue = self.q(latent)
+        if hasattr(self, 'state'):
+            qvalue = self.state(latent) + qvalue - qvalue.mean(1, keepdim=True)
+        return qvalue
 
 
 def get_optimizer(name, parameters, lr):
