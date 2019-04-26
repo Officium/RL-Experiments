@@ -8,6 +8,7 @@ import torch
 import torch.distributions
 from torch.nn.utils.convert_parameters import vector_to_parameters
 from torch.nn.utils.convert_parameters import parameters_to_vector
+from torch.utils.data import DataLoader
 
 from common.logger import get_logger
 from common.models import build_policy, build_value, get_optimizer
@@ -92,7 +93,9 @@ def learn(device,
         if torch.allclose(pg, torch.zeros_like(pg)):
             logger.warn("got zero gradient. not updating")
         else:
-            fvp = partial(_fvp, b_o=b_o, policy=policy, cg_damping=cg_damping)
+            # highlight, only 20 percents of data is used to calculate fvp
+            fvp = partial(_fvp, b_o=b_o[::5],
+                          policy=policy, cg_damping=cg_damping)
             stepdir = _cg(fvp, pg, cg_iters)
             shs = 0.5 * stepdir.dot(fvp(stepdir))
             lm = torch.sqrt(shs / max_kl)
@@ -127,14 +130,18 @@ def learn(device,
                 stepsize *= .5
 
         # update baseline
+        # highlight: minibatch value update here and drop the last
+        loader = DataLoader(list(zip(b_o, b_r)), 64, True, drop_last=True)
         for _ in range(vf_iters):
-            b_v = value(b_o)[:, 0]
-            optimizer.zero_grad()
-            vloss = (b_v - b_r).pow(2).mean()
-            vloss.backward()
-            optimizer.step()
+            for bb_o, bb_r in loader:
+                bb_v = value(bb_o)[:, 0]
+                optimizer.zero_grad()
+                vloss = (bb_v - bb_r).pow(2).mean()
+                vloss.backward()
+                optimizer.step()
 
         # log
+        n_iter += 1
         logger.info('{} Iter {} {}'.format('=' * 10, n_iter, '=' * 10))
         fps = int(total_timesteps / (time.time() - start_ts))
         logger.info('Total timesteps {} FPS {}'.format(total_timesteps, fps))
