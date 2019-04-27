@@ -5,6 +5,7 @@ in openai/baselines
 import operator
 import random
 
+import numpy as np
 import torch
 
 
@@ -185,17 +186,18 @@ class ReplayBuffer(object):
         for i in idxes:
             o, a, r, o_, d = self._storage[i]
             b_o.append(o.astype('float32'))
-            b_a.append(a)
-            b_r.append(r)
+            b_a.append([a])
+            b_r.append([r])
             b_o_.append(o_.astype('float32'))
-            b_d.append(int(d))
-        return (
-            torch.Tensor(b_o).to(self._device),
-            torch.Tensor(b_a).long().unsqueeze(1).to(self._device),
-            torch.Tensor(b_r).float().unsqueeze(1).to(self._device),
-            torch.Tensor(b_o_).to(self._device),
-            torch.Tensor(b_d).float().unsqueeze(1).to(self._device),
+            b_d.append([int(d)])
+        res = (
+            torch.from_numpy(np.asarray(b_o)).to(self._device),
+            torch.from_numpy(np.asarray(b_a)).to(self._device).long(),
+            torch.from_numpy(np.asarray(b_r)).to(self._device).float(),
+            torch.from_numpy(np.asarray(b_o_)).to(self._device),
+            torch.from_numpy(np.asarray(b_d)).to(self._device).float(),
         )
+        return res
 
     def sample(self, batch_size):
         """Sample a batch of experiences."""
