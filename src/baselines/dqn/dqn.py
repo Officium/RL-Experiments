@@ -4,6 +4,7 @@ import random
 import time
 from collections import deque
 
+import numpy as np
 import torch
 import torch.distributions
 import torch.nn as nn
@@ -24,7 +25,8 @@ def learn(device,
           double_q, param_noise, dueling,
           exploration_fraction, exploration_final_eps,
           batch_size, train_freq, learning_starts, target_network_update_freq,
-          buffer_size, prioritized_replay, prioritized_replay_alpha, **kwargs):
+          buffer_size, prioritized_replay, prioritized_replay_alpha,
+          prioritized_replay_beta0, **kwargs):
     """
     Papers:
     Mnih V, Kavukcuoglu K, Silver D, et al. Human-level control through deep
@@ -49,6 +51,7 @@ def learn(device,
     buffer_size (int): size of the replay buffer
     prioritized_replay (bool): if True prioritized replay buffer will be used.
     prioritized_replay_alpha (float): alpha parameter for prioritized replay
+    prioritized_replay_beta0 (float): beta parameter for prioritized replay
 
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
@@ -57,46 +60,52 @@ def learn(device,
                 'consitent with openai/baselines, which means `Multi-step` and '
                 '`Distributional` are missing. Welcome any contributions!')
 
-    qnet = build_q(env, network, dueling)
-    qtar = build_q(env, network, dueling)
+    qnet = build_q(env, network, dueling).to(device)
+    qtar = build_q(env, network, dueling).to(device)
     qtar.load_state_dict(qnet.state_dict())
     optimizer = get_optimizer(optimizer, qnet.parameters(), lr)
     if prioritized_replay:
         buffer = PrioritizedReplayBuffer(buffer_size, device,
-                                         prioritized_replay_alpha)
+                                         prioritized_replay_alpha,
+                                         prioritized_replay_beta0)
     else:
         buffer = ReplayBuffer(buffer_size, device)
     generator = _generate(device, env, qnet, ob_scale,
-                          number_timesteps, batch_size, buffer, param_noise,
+                          number_timesteps, param_noise,
                           exploration_fraction, exploration_final_eps)
 
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     start_ts = time.time()
     for n_iter in range(1, number_timesteps + 1):
-        b_o, b_a, b_r, b_o_, b_d, *extra, info = generator.__next__()
+        if prioritized_replay:
+            buffer.beta += (1 - prioritized_replay_beta0) / number_timesteps
+        *data, info = generator.__next__()
+        buffer.add(*data)
         for k, v in info.items():
             infos[k].append(v)
 
         # update qnet
         if n_iter > learning_starts and n_iter % train_freq == 0:
+            b_o, b_a, b_r, b_o_, b_d, *extra = buffer.sample(batch_size)
             b_q = qnet(b_o).gather(1, b_a)
             with torch.no_grad():
                 if double_q:
-                    b_q_ = (1 - b_d) * qtar(b_o_).gather(1, b_q(b_o_).argmax(1))
+                    b_a_ = qnet(b_o_).argmax(1).unsqueeze(1)
+                    b_q_ = (1 - b_d) * qtar(b_o_).gather(1, b_a_)
                 else:
                     b_q_ = (1 - b_d) * qtar(b_o_).max(1)[0]
-            td_error = b_q - (b_r + gamma * b_q_)
+            abs_td_error = (b_q - (b_r + gamma * b_q_)).abs()
             if extra:
-                loss = (extra[0] * huber_loss(td_error)).mean()  # weighted
+                loss = (extra[0] * huber_loss(abs_td_error)).mean()  # weighted
             else:
-                loss = huber_loss(td_error).mean()
+                loss = huber_loss(abs_td_error).mean()
             optimizer.zero_grad()
             loss.backward()
             if grad_norm is not None:
                 nn.utils.clip_grad_norm_(qnet.parameters(), grad_norm)
             optimizer.step()
             if prioritized_replay:
-                buffer.update_priorities(extra[1], td_error.item())
+                buffer.update_priorities(extra[1], abs_td_error.detach().cpu())
 
         # update target net and log
         if n_iter % target_network_update_freq == 0:
@@ -114,7 +123,7 @@ def learn(device,
 
 
 def _generate(device, env, qnet, ob_scale,
-              number_timesteps, batch_size, buffer, param_noise,
+              number_timesteps, param_noise,
               exploration_fraction, exploration_final_eps):
     """ Generate training batch sample """
     noise_scale = 1e-2
@@ -130,7 +139,8 @@ def _generate(device, env, qnet, ob_scale,
 
         # sample action
         with torch.no_grad():
-            q = qnet(scale_ob(o, device, ob_scale))
+            ob = scale_ob(np.expand_dims(o, 0), device, ob_scale)
+            q = qnet(ob)
             if not param_noise:
                 if random.random() < epsilon:
                     a = int(random.random() * action_dim)
@@ -145,7 +155,7 @@ def _generate(device, env, qnet, ob_scale,
                         m.weight.add_(torch.normal(0, std).to(device))
                         std = torch.empty_like(m.bias).fill_(noise_scale)
                         m.bias.add_(torch.normal(0, std).to(device))
-                q_perturb = qnet(scale_ob(o, device, ob_scale))
+                q_perturb = qnet(ob)
                 kl_perturb = (
                     (log_softmax(q) - log_softmax(q_perturb)) * softmax(q)
                 ).sum(-1).mean()
@@ -165,18 +175,16 @@ def _generate(device, env, qnet, ob_scale,
         epret += r
         eplen += 1
         if done:
-            infos = {'epretmean': epret, 'eplenmean': eplen}
+            infos = {'eprewmean': epret, 'eplenmean': eplen}
             epret = eplen = 0
 
-        # store batch data and update observation
-        buffer.add(o, a, r, o_, int(done))
-        yield buffer.sample(batch_size) + (infos, )
+        # return data and update observation
+        yield (o, a, r, o_, int(done), infos)
         infos = dict()
-        o = o_
+        o = o_ if not done else env.reset()
 
 
-def huber_loss(td_error):
-    abs_error = td_error.abs()
-    flag = (abs_error < 1).float()
-    return flag * abs_error.pow(2) * 0.5 + (1 - flag) * (abs_error - 0.5)
+def huber_loss(abs_td_error):
+    flag = (abs_td_error < 1).float()
+    return flag * abs_td_error.pow(2) * 0.5 + (1 - flag) * (abs_td_error - 0.5)
 

@@ -190,11 +190,11 @@ class ReplayBuffer(object):
             b_o_.append(o_.astype('float32'))
             b_d.append(int(d))
         return (
-            torch.from_numpy(b_o).to(self._device),
-            torch.Tensor(b_a).long().to(self._device),
-            torch.Tensor(b_r).float().to(self._device),
-            torch.from_numpy(b_o_).to(self._device),
-            torch.Tensor(b_d).float().to(self._device),
+            torch.Tensor(b_o).to(self._device),
+            torch.Tensor(b_a).long().unsqueeze(1).to(self._device),
+            torch.Tensor(b_r).float().unsqueeze(1).to(self._device),
+            torch.Tensor(b_o_).to(self._device),
+            torch.Tensor(b_d).float().unsqueeze(1).to(self._device),
         )
 
     def sample(self, batch_size):
@@ -205,7 +205,7 @@ class ReplayBuffer(object):
 
 
 class PrioritizedReplayBuffer(ReplayBuffer):
-    def __init__(self, size, device, alpha):
+    def __init__(self, size, device, alpha, beta):
         """Create Prioritized Replay buffer.
 
         Parameters
@@ -232,6 +232,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         self._it_sum = SumSegmentTree(it_capacity)
         self._it_min = MinSegmentTree(it_capacity)
         self._max_priority = 1.0
+        self.beta = beta
 
     def add(self, *args, **kwargs):
         """See ReplayBuffer.store_effect"""
@@ -250,7 +251,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             res.append(idx)
         return res
 
-    def sample(self, batch_size, beta):
+    def sample(self, batch_size):
         """Sample a batch of experiences.
 
         compared to ReplayBuffer.sample
@@ -262,9 +263,6 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         ----------
         batch_size: int
             How many transitions to sample.
-        beta: float
-            To what degree to use importance weights
-            (0 - no corrections, 1 - full correction)
 
         Returns
         -------
@@ -286,21 +284,19 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             Array of shape (batch_size,) and dtype np.int32
             idexes in buffer of sampled experiences
         """
-        assert beta > 0
-
         idxes = self._sample_proportional(batch_size)
 
         weights = []
         p_min = self._it_min.min() / self._it_sum.sum()
-        max_weight = (p_min * len(self._storage)) ** (-beta)
+        max_weight = (p_min * len(self._storage)) ** (-self.beta)
 
         for idx in idxes:
             p_sample = self._it_sum[idx] / self._it_sum.sum()
-            weight = (p_sample * len(self._storage)) ** (-beta)
+            weight = (p_sample * len(self._storage)) ** (-self.beta)
             weights.append(weight / max_weight)
-        weights = torch.Tensor(weights)
+        weights = torch.Tensor(weights).to(self._device)
         encoded_sample = self._encode_sample(idxes)
-        return tuple(list(encoded_sample) + [weights, idxes])
+        return encoded_sample + (weights, idxes)
 
     def update_priorities(self, idxes, priorities):
         """Update priorities of sampled transitions.

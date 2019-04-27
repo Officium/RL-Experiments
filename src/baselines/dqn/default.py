@@ -15,9 +15,10 @@ def atari():
         gamma=0.99,
         prioritized_replay=True,
         prioritized_replay_alpha=0.6,
+        prioritized_replay_beta0=0.4,
         param_noise=False,
         dueling=True,
-        scale_ob=1 / 255.0
+        ob_scale=1 / 255.0
     )
 
 
@@ -38,7 +39,8 @@ def classic_control():
         gamma=0.99,
         prioritized_replay=False,
         prioritized_replay_alpha=0.6,
+        prioritized_replay_beta0=0.4,
         param_noise=False,
         dueling=True,
-        scale_ob=1
+        ob_scale=1
     )
