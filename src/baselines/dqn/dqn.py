@@ -115,6 +115,8 @@ def learn(device,
             for k, v in infos.items():
                 v = (sum(v) / len(v)) if v else float('nan')
                 logger.info('{}: {:.6f}'.format(k, v))
+            if n_iter > learning_starts and n_iter % train_freq == 0:
+                logger.info('vloss: {:.6f}'.format(loss.item()))
 
         if save_interval and n_iter % save_interval == 0:
             torch.save([qnet.state_dict(), optimizer.state_dict()],

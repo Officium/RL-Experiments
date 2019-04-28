@@ -288,15 +288,13 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         """
         idxes = self._sample_proportional(batch_size)
 
-        weights = []
-        p_min = self._it_min.min() / self._it_sum.sum()
+        it_sum = self._it_sum.sum()
+        p_min = self._it_min.min() / it_sum
         max_weight = (p_min * len(self._storage)) ** (-self.beta)
 
-        for idx in idxes:
-            p_sample = self._it_sum[idx] / self._it_sum.sum()
-            weight = (p_sample * len(self._storage)) ** (-self.beta)
-            weights.append(weight / max_weight)
-        weights = torch.Tensor(weights).to(self._device)
+        p_samples = np.asarray([self._it_sum[idx] for idx in idxes]) / it_sum
+        weights = (p_samples * len(self._storage)) ** (-self.beta) / max_weight
+        weights = torch.from_numpy(weights.astype('float32')).to(self._device)
         encoded_sample = self._encode_sample(idxes)
         return encoded_sample + (weights, idxes)
 
