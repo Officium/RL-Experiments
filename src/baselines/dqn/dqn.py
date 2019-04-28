@@ -153,9 +153,9 @@ def _generate(device, env, qnet, ob_scale,
                 for _, m in qnet.named_modules():
                     if isinstance(m, nn.Linear):
                         std = torch.empty_like(m.weight).fill_(noise_scale)
-                        m.weight.add_(torch.normal(0, std).to(device))
+                        m.weight.data.add_(torch.normal(0, std).to(device))
                         std = torch.empty_like(m.bias).fill_(noise_scale)
-                        m.bias.add_(torch.normal(0, std).to(device))
+                        m.bias.data.add_(torch.normal(0, std).to(device))
                 q_perturb = qnet(ob)
                 kl_perturb = (
                     (log_softmax(q) - log_softmax(q_perturb)) * softmax(q)
