@@ -3,6 +3,7 @@ import os
 import random
 import time
 from collections import deque
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -11,7 +12,6 @@ import torch.nn as nn
 from torch.nn.functional import softmax, log_softmax
 
 from common.logger import get_logger
-from common.models import build_q, get_optimizer
 from common.util import scale_ob
 from common.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 
@@ -21,12 +21,12 @@ def learn(device,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
-          lr, gamma, grad_norm,
-          double_q, param_noise, dueling,
+          gamma, grad_norm,
+          double_q, param_noise,
           exploration_fraction, exploration_final_eps,
           batch_size, train_freq, learning_starts, target_network_update_freq,
           buffer_size, prioritized_replay, prioritized_replay_alpha,
-          prioritized_replay_beta0, **kwargs):
+          prioritized_replay_beta0):
     """
     Papers:
     Mnih V, Kavukcuoglu K, Silver D, et al. Human-level control through deep
@@ -60,10 +60,8 @@ def learn(device,
                 'consitent with openai/baselines, which means `Multi-step` and '
                 '`Distributional` are missing. Welcome any contributions!')
 
-    qnet = build_q(env, network, dueling).to(device)
-    qtar = build_q(env, network, dueling).to(device)
-    qtar.load_state_dict(qnet.state_dict())
-    optimizer = get_optimizer(optimizer, qnet.parameters(), lr)
+    qnet = network.to(device)
+    qtar = deepcopy(qnet)
     if prioritized_replay:
         buffer = PrioritizedReplayBuffer(buffer_size, device,
                                          prioritized_replay_alpha,

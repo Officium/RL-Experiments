@@ -10,7 +10,6 @@ from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 
 from common.logger import get_logger
-from common.models import build_policy, get_optimizer
 from common.util import scale_ob, Trajectories
 
 
@@ -19,8 +18,8 @@ def learn(device,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
-          lr, gamma, grad_norm, timesteps_per_batch, ent_coef,
-          vf_coef, gae_lam, nminibatches, opt_iter, cliprange, **kwargs):
+          gamma, grad_norm, timesteps_per_batch, ent_coef,
+          vf_coef, gae_lam, nminibatches, opt_iter, cliprange):
     """
     Paper:
     Schulman J, Wolski F, Dhariwal P, et al. Proximal policy optimization
@@ -43,8 +42,7 @@ def learn(device,
     logger.warn('This implementation of ppo only '
                 'support discrete action spaces now!')
 
-    policy = build_policy(env, network, estimate_value=True).to(device)
-    optimizer = get_optimizer(optimizer, policy.parameters(), lr)
+    policy = network.to(device)
     number_timesteps = number_timesteps // nenv
     generator = _generate(
         device, env, policy, ob_scale,

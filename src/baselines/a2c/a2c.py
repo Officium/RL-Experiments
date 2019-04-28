@@ -8,7 +8,6 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
 from common.logger import get_logger
-from common.models import build_policy, get_optimizer
 from common.util import scale_ob, Trajectories
 
 
@@ -17,8 +16,7 @@ def learn(device,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
-          lr, gamma, grad_norm, timesteps_per_batch,
-          ent_coef, vf_coef, **kwargs):
+          gamma, grad_norm, timesteps_per_batch, ent_coef, vf_coef):
     """
     Paper:
     Mnih V, Badia A P, Mirza M, et al. Asynchronous methods for deep
@@ -36,8 +34,7 @@ def learn(device,
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
 
-    policy = build_policy(env, network, estimate_value=True).to(device)
-    optimizer = get_optimizer(optimizer, policy.parameters(), lr)
+    policy = network.to(device)
     number_timesteps = number_timesteps // nenv
     generator = _generate(
         device, env, policy, ob_scale,

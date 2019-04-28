@@ -11,7 +11,6 @@ from torch.nn.utils.convert_parameters import parameters_to_vector
 from torch.utils.data import DataLoader
 
 from common.logger import get_logger
-from common.models import build_policy, build_value, get_optimizer
 from common.util import scale_ob, Trajectories
 
 
@@ -21,7 +20,7 @@ def learn(device,
           network, optimizer,
           save_path, save_interval, ob_scale,
           gamma, timesteps_per_batch, cg_iters, cg_damping, max_kl,
-          gae_lam, vf_iters, vf_lr, entcoeff, linear_search_iter=10, **kwargs):
+          gae_lam, vf_iters, entcoeff, linear_search_iter=10):
     """
     Thesis:
     Schulman J. Optimizing Expectations: From Deep Reinforcement Learning to
@@ -42,7 +41,6 @@ def learn(device,
         max_kl (float): max KL(pi_old || pi)
         gae_lam (float): advantage estimation
         vf_iters (float): number of value update per policy update
-        vf_lr (int): learning rate for optimizer of value
         entcoeff (float): coefficient of policy entropy term
 
     """
@@ -51,9 +49,7 @@ def learn(device,
     logger.warn('This implementation of trpo only '
                 'support discrete action spaces now!')
 
-    policy = build_policy(env, network, estimate_value=False).to(device)
-    value = build_value(env, network).to(device)
-    optimizer = get_optimizer(optimizer, value.parameters(), vf_lr)
+    policy, value = map(lambda net: net.to(device), network)
     number_timesteps = number_timesteps // nenv
     generator = _generate(
         device, env, policy, value, ob_scale,

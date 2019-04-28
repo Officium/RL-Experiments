@@ -12,10 +12,13 @@ from sys import platform
 import gym
 import numpy as np
 import torch
+import torch.nn as nn
 
+from common.logger import get_logger
 from common.wrappers import *
 
 
+logger = get_logger()
 # env_id -> env_type
 id2type = dict()
 for _env in gym.envs.registry.all():
@@ -24,21 +27,18 @@ for _env in gym.envs.registry.all():
 
 def build_env(env_id, algorithm, env_type, **kwargs):
     """ Build env based on options """
+    assert env_type in {'atari', 'classic_control'}
     seed = kwargs['seed']
-    reward_scale = kwargs['reward_scale']
-    nenv = kwargs['nenv'] or 1
-    if env_type == 'atari':
-        if algorithm == 'dqn':
-            env = make_env(env_id, env_type, seed, reward_scale)
-        else:
-            nenv = kwargs['nenv'] or cpu_count() // (1 + (platform == 'darwin'))
-            env = make_vec_env(env_id, env_type, nenv, seed, reward_scale)
-    elif env_type == 'classic_control':
-        env = make_vec_env(env_id, env_type, nenv, seed, reward_scale, False)
+    reward_scale = kwargs.pop('reward_scale')
+    nenv = kwargs.pop('nenv') or cpu_count() // (1 + (platform == 'darwin'))
+    stack = env_type == 'atari'
+    if algorithm == 'dqn':
+        env = make_env(env_id, env_type, seed, reward_scale, stack)
     else:
-        raise NotImplementedError
+        kwargs['nenv'] = nenv
+        env = make_vec_env(env_id, env_type, nenv, seed, reward_scale, stack)
 
-    return env, nenv
+    return env, kwargs
 
 
 def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
@@ -77,11 +77,11 @@ def make_vec_env(env_id, env_type, nenv, seed, reward_scale, frame_stack=True):
     return env
 
 
-def get_algorithm_defaults(env_type, algorithm):
+def get_algorithm_defaults(env, env_type, algorithm):
     """ Get algorithm default hyper-parameters by env """
     try:
         module = get_algorithm_module(algorithm, 'default')
-        kwargs = getattr(module, env_type)()
+        kwargs = getattr(module, env_type)(env)
     except (ImportError, AttributeError):
         kwargs = dict()
     return kwargs
@@ -96,13 +96,18 @@ def learn(env_id, algorithm, **kwargs):
     """ Learn entry """
     set_global_seeds(kwargs['seed'])
     env_type = id2type[env_id]
-    env, kwargs['nenv'] = build_env(env_id, algorithm, env_type, **kwargs)
+    env, kwargs = build_env(env_id, algorithm, env_type, **kwargs)
     algorithm = algorithm.lower()
-    specific_options = get_algorithm_defaults(env_type, algorithm)
+    specific_options = get_algorithm_defaults(env, env_type, algorithm)
     for k, v in kwargs.items():
         if v is not None:
             specific_options[k] = v
     module = get_algorithm_module(algorithm, algorithm)
+    s = '\n' + '-' * 60 + '\n'
+    option_repr = ''.join('{}{}: {}'.format(s, k, v.__repr__())
+                          for k, v in specific_options.items()) + s
+    logger.info('Start training `{}` on `{}` with settings {}'
+                .format(algorithm, env, option_repr))
     return getattr(module, 'learn')(env=env, **specific_options)
 
 
@@ -223,3 +228,11 @@ class Trajectories(object):
 
 def scale_ob(array, device, scale):
     return torch.from_numpy(array.astype(np.float32) * scale).to(device)
+
+
+class Flatten(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return x.contiguous().view(x.size(0), -1)

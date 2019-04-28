@@ -12,8 +12,8 @@ print("""
     Notes:
         CUDA usage is depend on `CUDA_VISIABLE_DEVICES`;
         Log will be recorded at ../logs/{algorithm}_{seed};
-        If you need multi-gpu training or sampling, please add `nn.DataParallel` 
-        to `build_policy`, `build_value` or `build_q` in common/models.py.
+        If you need multi-gpu training or other nn specific features, please 
+        modify the default.py file in corresponding algorithm folder.
 """)
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -27,8 +27,6 @@ parser.add_argument('--algorithm', type=str, required=True, help='Algorithm')
 parser.add_argument('--nenv', type=int, default=0, help='parrallel number')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--number_timesteps', type=float, default=1e6)
-parser.add_argument('--network', type=str, help='mlp|cnn|lstm|cnnlstm|smallcnn')
-parser.add_argument('--optimizer', type=str, help='Adam|RMSprop')
 parser.add_argument('--reward_scale', type=float, default=1.0)
 parser.add_argument('--save_path', type=str, default='../checkpoints')
 parser.add_argument('--save_interval', type=int, default=0,
@@ -48,8 +46,6 @@ model = learn(
     save_path=common_options.save_path,
     save_interval=common_options.save_interval,
     algorithm=common_options.algorithm,
-    network=common_options.network,
-    optimizer=common_options.optimizer,
     reward_scale=common_options.reward_scale,
     **other_options
 )

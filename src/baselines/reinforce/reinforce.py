@@ -6,16 +6,15 @@ import torch
 import torch.distributions
 
 from common.logger import get_logger
-from common.models import build_policy, get_optimizer
 from common.util import scale_ob, Trajectories
 
 
 def learn(device,
-          env, seed,
+          env, nenv, seed,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
-          gamma, lr, timesteps_per_batch, **kwargs):
+          gamma, timesteps_per_batch):
     """
     Paper:
     Williams R J. Simple Statistical Gradient-Following Algorithms for
@@ -24,17 +23,15 @@ def learn(device,
     Parameters:
     ----------
         gamma (float): reward gamma
-        lr (float): learning rate
         batch_episode (int): how many episodes will be sampled before update
 
     """
     name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
     logger = get_logger(name)
 
-    policy = build_policy(env, network).to(device)
-    optimizer = get_optimizer(optimizer, policy.parameters(), lr)
+    policy = network.to(device)
     generator = _generate(device, env, policy, ob_scale,
-                          number_timesteps, gamma, timesteps_per_batch)
+                          number_timesteps // nenv, gamma, timesteps_per_batch)
 
     n_iter = 0
     total_timesteps = 0
