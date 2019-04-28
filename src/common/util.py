@@ -108,7 +108,10 @@ def learn(env_id, algorithm, **kwargs):
                           for k, v in specific_options.items()) + s
     logger.info('Start training `{}` on `{}` with settings {}'
                 .format(algorithm, env, option_repr))
-    return getattr(module, 'learn')(env=env, **specific_options)
+    try:
+        return getattr(module, 'learn')(env=env, **specific_options)
+    except Exception as e:
+        logger.critical('algorithm execute fail', exc_info=e)
 
 
 def parse_all_args(parser):

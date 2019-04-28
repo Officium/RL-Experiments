@@ -53,11 +53,11 @@ class _Logger(object):
         log_handler.setFormatter(logging.Formatter(_Logger.logFormat))
         logger.addHandler(log_handler)
 
-        # stream handler (default sys.stderr)
-        log_handler = logging.StreamHandler()
-        log_handler.setLevel(_Logger.logLevel)
-        log_handler.setFormatter(logging.Formatter(_Logger.logFormat))
-        logger.addHandler(log_handler)
+        # # stream handler (default sys.stderr)
+        # log_handler = logging.StreamHandler()
+        # log_handler.setLevel(_Logger.logLevel)
+        # log_handler.setFormatter(logging.Formatter(_Logger.logFormat))
+        # logger.addHandler(log_handler)
         self._loggers[key] = logger
 
     def __getitem__(self, key):

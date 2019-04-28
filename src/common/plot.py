@@ -10,7 +10,9 @@ from matplotlib import pyplot as plt
 
 xscale = {
     'ppo': 1024 * 4,  # 1024 means timestep per update, 4 means skip4frame
-    'trpo': 4096 * 4,  # 4096 means timestep per update, 4 means skip4frame
+    'trpo': 4096 * 4,
+    'dqn': 4 * 4,
+    'a2c': 5 * 4,
 }
 COLORS = [
     'blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple',

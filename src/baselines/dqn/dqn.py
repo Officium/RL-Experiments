@@ -103,7 +103,7 @@ def learn(device,
                 nn.utils.clip_grad_norm_(qnet.parameters(), grad_norm)
             optimizer.step()
             if prioritized_replay:
-                priorities = abs_td_error.detach().cpu().clamp(0)  # stable
+                priorities = abs_td_error.detach().cpu().clamp(1e-6)  # stable
                 buffer.update_priorities(extra[1], priorities)
 
         # update target net and log
