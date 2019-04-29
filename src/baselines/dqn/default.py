@@ -34,7 +34,7 @@ def classic_control(env):
     in_dim = env.observation_space.shape[0]
     policy_dim = env.action_space.n
     network = MLP(in_dim, policy_dim, True)
-    optimizer = Adam(network.parameters(), 1e-2, eps=1e-5)
+    optimizer = Adam(network.parameters(), 1e-3, eps=1e-5)
     return dict(
         network=network,
         optimizer=optimizer,

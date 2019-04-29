@@ -91,7 +91,7 @@ def learn(device,
                     b_a_ = qnet(b_o_).argmax(1).unsqueeze(1)
                     b_q_ = (1 - b_d) * qtar(b_o_).gather(1, b_a_)
                 else:
-                    b_q_ = (1 - b_d) * qtar(b_o_).max(1)[0]
+                    b_q_ = (1 - b_d) * qtar(b_o_).max(1, keepdim=True)[0]
             abs_td_error = (b_q - (b_r + gamma * b_q_)).abs()
             if extra:
                 loss = (extra[0] * huber_loss(abs_td_error)).mean()  # weighted
