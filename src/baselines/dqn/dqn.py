@@ -85,6 +85,8 @@ def learn(device,
         # update qnet
         if n_iter > learning_starts and n_iter % train_freq == 0:
             b_o, b_a, b_r, b_o_, b_d, *extra = buffer.sample(batch_size)
+            b_o.mul_(ob_scale)
+            b_o_.mul_(ob_scale)
             b_q = qnet(b_o).gather(1, b_a)
             with torch.no_grad():
                 if double_q:
@@ -103,7 +105,7 @@ def learn(device,
                 nn.utils.clip_grad_norm_(qnet.parameters(), grad_norm)
             optimizer.step()
             if prioritized_replay:
-                priorities = abs_td_error.detach().cpu().clamp(1e-6)  # stable
+                priorities = abs_td_error.detach().cpu().clamp(1e-6).numpy()
                 buffer.update_priorities(extra[1], priorities)
 
         # update target net and log
