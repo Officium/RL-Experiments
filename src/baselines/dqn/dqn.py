@@ -151,7 +151,7 @@ def _generate(device, env, qnet, ob_scale,
                     a = q.argmax(1).cpu().numpy()[0]
             else:
                 # see Appendix C of `https://arxiv.org/abs/1706.01905`
-                q_dict = qnet.state_dict()
+                q_dict = deepcopy(qnet.state_dict())
                 for _, m in qnet.named_modules():
                     if isinstance(m, nn.Linear):
                         std = torch.empty_like(m.weight).fill_(noise_scale)
@@ -159,9 +159,8 @@ def _generate(device, env, qnet, ob_scale,
                         std = torch.empty_like(m.bias).fill_(noise_scale)
                         m.bias.data.add_(torch.normal(0, std).to(device))
                 q_perturb = qnet(ob)
-                kl_perturb = (
-                    (log_softmax(q) - log_softmax(q_perturb)) * softmax(q)
-                ).sum(-1).mean()
+                kl_perturb = ((log_softmax(q, 1) - log_softmax(q_perturb, 1)) *
+                              softmax(q, 1)).sum(-1).mean()
                 kl_explore = -math.log(1 - epsilon + epsilon / action_dim)
                 if kl_perturb < kl_explore:
                     noise_scale *= 1.01
