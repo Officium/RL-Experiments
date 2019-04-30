@@ -1,6 +1,8 @@
 """
-This file is adapted from common/segment_tree.py and deepq/replay_buffer.py
-in openai/baselines
+This file is adapted from following files in openai/baselines.
+common/segment_tree.py
+deepq/replay_buffer.py
+baselines/acer/buffer.py
 """
 import operator
 import random
@@ -254,38 +256,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         return res
 
     def sample(self, batch_size):
-        """Sample a batch of experiences.
-
-        compared to ReplayBuffer.sample
-        it also returns importance weights and idxes
-        of sampled experiences.
-
-
-        Parameters
-        ----------
-        batch_size: int
-            How many transitions to sample.
-
-        Returns
-        -------
-        obs_batch: np.array
-            batch of observations
-        act_batch: np.array
-            batch of actions executed given obs_batch
-        rew_batch: np.array
-            rewards received as results of executing act_batch
-        next_obs_batch: np.array
-            next set of observations seen after executing act_batch
-        done_mask: np.array
-            done_mask[i] = 1 if executing act_batch[i] resulted in
-            the end of an episode and 0 otherwise.
-        weights: np.array
-            Array of shape (batch_size,) and dtype np.float32
-            denoting importance weight of each sampled transition
-        idxes: np.array
-            Array of shape (batch_size,) and dtype np.int32
-            idexes in buffer of sampled experiences
-        """
+        """Sample a batch of experiences"""
         idxes = self._sample_proportional(batch_size)
 
         it_sum = self._it_sum.sum()
@@ -300,20 +271,7 @@ class PrioritizedReplayBuffer(ReplayBuffer):
         return encoded_sample + (weights, idxes)
 
     def update_priorities(self, idxes, priorities):
-        """Update priorities of sampled transitions.
-
-        sets priority of transition at index idxes[i] in buffer
-        to priorities[i].
-
-        Parameters
-        ----------
-        idxes: [int]
-            List of idxes of sampled transitions
-        priorities: [float]
-            List of updated priorities corresponding to
-            transitions at the sampled idxes denoted by
-            variable `idxes`.
-        """
+        """Update priorities of sampled transitions"""
         assert len(idxes) == len(priorities)
         for idx, priority in zip(idxes, priorities):
             assert priority > 0
@@ -322,3 +280,112 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             self._it_min[idx] = priority ** self._alpha
 
             self._max_priority = max(self._max_priority, priority)
+
+
+class VecReplayBuffer(object):
+    """Replay buffer used in ACER. Parrallel envs and multi-step are considered.
+    Note that this buffer is different with replay buffer used in DQN.
+    """
+    def __init__(self, env, nsteps, size, device):
+        self.nsteps = nsteps
+        self.o_shape = env.observation_space.shape
+        self.o_dtype = env.observation_space.dtype
+        self.a_num = env.action_space.n
+        self.a_dtype = env.action_space.dtype
+        self.nenv = self.o_shape[0]
+        self.nstack = env.nstack
+        self.nc = self.o_shape[1] // self.nstack
+        self.nbatch = self.nenv * self.nsteps
+        # Each loc contains nenv * nsteps frames
+        self.size = size // self.nsteps
+
+        # Memory
+        s = (self.nsteps + self.nstack, self.nc) + self.o_shape[2:]
+        self.enc_o = np.empty((self.size, self.nenv) + s, dtype=self.o_dtype)
+        s = (self.size, self.nenv, self.nsteps)
+        self.a = np.empty(s, dtype=self.a_dtype)
+        self.r = np.empty(s, dtype=np.float32)
+        self.p = np.empty(s + (self.a_num, ), dtype=np.float32)
+        self.done = np.empty(s, dtype=np.int32)
+        self.mask = np.empty(s, dtype=np.int32)
+
+        # Size indexes
+        self.next_idx = 0
+        self.nonempty_num = 0
+
+        self.device = device
+
+    def add(self, enc_o, a, r, p, done, mask):
+        """Add sample
+        Args:
+            enc_o (numpy.array): shape (nenv, nstack + nstep, nc, nh, nw)
+            a (numpy.array): shape (nenv, nsteps)
+            r (numpy.array): shape (nenv, nsteps)
+            p (numpy.array): shape (nenv, nsteps, nacts)
+            done (numpy.array): shape (nenv, nsteps)
+            mask (numpy.array): shape (nenv, nsteps)
+        """
+        self.enc_o[self.next_idx] = enc_o
+        self.a[self.next_idx] = a
+        self.r[self.next_idx] = r
+        self.p[self.next_idx] = p
+        self.done[self.next_idx] = done
+        self.mask[self.next_idx] = mask
+        self.next_idx = (self.next_idx + 1) % self.size
+        self.nonempty_num = min(self.size, self.nonempty_num + 1)
+
+    def _take(self, x, idx):
+        out = np.empty((self.nenv, ) + x.shape[2:], dtype=x.dtype)
+        for i in range(self.nenv):
+            out[i] = x[idx[i], i]
+        return out
+
+    def sample(self):
+        """Get a sample per env. Across envs will lead higher correlation.
+        Returns:
+            o (numpy.array): shape (nenv, 1 + nstep, nstack * nc, nh, nw)
+            a (numpy.array): shape (nenv, nsteps)
+            r (numpy.array): shape (nenv, nsteps)
+            p (numpy.array): shape (nenv, nsteps, nacts)
+            done (numpy.array): shape (nenv, nsteps)
+            mask (numpy.array): shape (nenv, nsteps)
+        """
+        idx = np.random.randint(0, self.nonempty_num, self.nenv)
+        b_done = self._take(self.done, idx)
+        b_o = self._stack_obs(self._take(self.enc_o, idx), b_done)
+        b_a = self._take(self.a, idx)
+        b_r = self._take(self.r, idx)
+        b_p = self._take(self.p, idx)
+        b_mask = self._take(self.mask, idx)
+        return (
+            torch.from_numpy(b_o).to(self.device).float(),
+            torch.from_numpy(b_a).to(self.device).long(),
+            torch.from_numpy(b_r).to(self.device).float(),
+            torch.from_numpy(b_p).to(self.device).float(),
+            torch.from_numpy(b_done).to(self.device).float(),
+            torch.from_numpy(b_mask).to(self.device).float()
+        )
+
+    def _stack_obs(self, enc_obs, dones):
+        """Stack obseverations
+        Args:
+            enc_obs (numpy.array): shape (nenv, nstack + nstep, nc, nh, nw)
+            dones (numpy.array): shape (nenv, nsteps)
+        Returns:
+            obs (numpy.array): shape (nenv, nstep + 1, nc * nstack, nh, nw)
+        """
+        returnob_shape = (self.nenv, self.nsteps + 1,
+                          self.nstack * self.nc) + self.o_shape[2:]
+
+        obs = np.zeros(returnob_shape, dtype=enc_obs.dtype)
+        mask = np.ones((self.nenv, self.nsteps + 1), dtype=enc_obs.dtype)
+        mask[:, 1:] = 1.0 - dones
+        mask = mask.reshape(mask.shape + (1, 1, 1))
+
+        for i in range(self.nstack - 1, -1, -1):
+            obs[:, :, i*self.nc:(i+1)*self.nc] = enc_obs[:, i:i+self.nsteps+1]
+            if i < self.nstack - 1:
+                obs[:, :, i*self.nc:(i+1)*self.nc] *= mask
+                mask[:, 1:] *= mask[:, :-1]
+
+        return obs
