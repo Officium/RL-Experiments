@@ -29,29 +29,6 @@ def atari(env):
     )
 
 
-def classic_control(env):
-    in_dim = env.observation_space.shape
-    policy_dim = env.action_space.n
-    network = CNN(in_dim, policy_dim)
-    optimizer = RMSprop(network.parameters(), 1e-2, eps=1e-5)
-    return dict(
-        network=network,
-        optimizer=optimizer,
-        timesteps_per_batch=20,
-        vf_coef=0.5,
-        ent_coef=0.01,
-        grad_norm=10,
-        gamma=0.99,
-        buffer_size=50000,
-        replay_ratio=4,
-        learning_starts=1000,
-        c=10.0,
-        trust_region=False,
-        alpha=0.99,
-        max_kl=1
-    )
-
-
 class CNN(nn.Module):
     def __init__(self, in_shape, policy_dim):
         super().__init__()
@@ -89,33 +66,3 @@ class CNN(nn.Module):
         prob, q = self.policy(latent), self.q(latent)
         v = (prob * q).sum(-1, keepdim=True)
         return prob, q, v
-
-
-class MLP(nn.Module):
-    def __init__(self, in_dim, policy_dim):
-        super().__init__()
-        self.feature = nn.Sequential(
-            nn.Linear(in_dim, 64),
-            nn.Tanh(),
-            nn.Linear(64, 64),
-            nn.Tanh()
-        )
-        for _, m in self.named_modules():
-            if isinstance(m, nn.Linear):
-                nn.init.orthogonal_(m.weight, math.sqrt(2))
-                nn.init.constant_(m.bias, 0)
-
-        self.policy = nn.Linear(64, policy_dim)
-        nn.init.orthogonal_(self.policy.weight, 1e-2)
-        nn.init.constant_(self.policy.bias, 0)
-        self.softmax = nn.Softmax(1)
-
-        self.q = nn.Linear(64, policy_dim)
-        nn.init.orthogonal_(self.q.weight, 1)
-        nn.init.constant_(self.q.bias, 0)
-
-    def forward(self, x):
-        latent = self.feature(x)
-        logits, q = self.policy(latent), self.q(latent)
-        v = (self.softmax(logits) * q).sum(-1, keepdim=True)
-        return logits, q, v
