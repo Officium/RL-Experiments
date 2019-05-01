@@ -286,28 +286,27 @@ class VecReplayBuffer(object):
     """Replay buffer used in ACER. Parrallel envs and multi-step are considered.
     Note that this buffer is different with replay buffer used in DQN.
     """
-    def __init__(self, env, nsteps, size, device):
+    def __init__(self, env, nenv, nsteps, size, device):
         self.nsteps = nsteps
         self.o_shape = env.observation_space.shape
         self.o_dtype = env.observation_space.dtype
         self.a_num = env.action_space.n
         self.a_dtype = env.action_space.dtype
-        self.nenv = self.o_shape[0]
-        self.nstack = env.nstack
-        self.nc = self.o_shape[1] // self.nstack
+        self.nenv = nenv
+        self.nstack = env.k
+        self.nc = self.o_shape[0] // self.nstack
         self.nbatch = self.nenv * self.nsteps
         # Each loc contains nenv * nsteps frames
         self.size = size // self.nsteps
 
         # Memory
-        s = (self.nsteps + self.nstack, self.nc) + self.o_shape[2:]
+        s = (self.nsteps + self.nstack, self.nc) + self.o_shape[1:]
         self.enc_o = np.empty((self.size, self.nenv) + s, dtype=self.o_dtype)
         s = (self.size, self.nenv, self.nsteps)
         self.a = np.empty(s, dtype=self.a_dtype)
         self.r = np.empty(s, dtype=np.float32)
         self.p = np.empty(s + (self.a_num, ), dtype=np.float32)
         self.done = np.empty(s, dtype=np.int32)
-        self.mask = np.empty(s, dtype=np.int32)
 
         # Size indexes
         self.next_idx = 0
@@ -315,7 +314,7 @@ class VecReplayBuffer(object):
 
         self.device = device
 
-    def add(self, enc_o, a, r, p, done, mask):
+    def add(self, enc_o, a, r, p, done):
         """Add sample
         Args:
             enc_o (numpy.array): shape (nenv, nstack + nstep, nc, nh, nw)
@@ -323,14 +322,12 @@ class VecReplayBuffer(object):
             r (numpy.array): shape (nenv, nsteps)
             p (numpy.array): shape (nenv, nsteps, nacts)
             done (numpy.array): shape (nenv, nsteps)
-            mask (numpy.array): shape (nenv, nsteps)
         """
         self.enc_o[self.next_idx] = enc_o
         self.a[self.next_idx] = a
         self.r[self.next_idx] = r
         self.p[self.next_idx] = p
         self.done[self.next_idx] = done
-        self.mask[self.next_idx] = mask
         self.next_idx = (self.next_idx + 1) % self.size
         self.nonempty_num = min(self.size, self.nonempty_num + 1)
 
@@ -348,7 +345,6 @@ class VecReplayBuffer(object):
             r (numpy.array): shape (nenv, nsteps)
             p (numpy.array): shape (nenv, nsteps, nacts)
             done (numpy.array): shape (nenv, nsteps)
-            mask (numpy.array): shape (nenv, nsteps)
         """
         idx = np.random.randint(0, self.nonempty_num, self.nenv)
         b_done = self._take(self.done, idx)
@@ -356,14 +352,12 @@ class VecReplayBuffer(object):
         b_a = self._take(self.a, idx)
         b_r = self._take(self.r, idx)
         b_p = self._take(self.p, idx)
-        b_mask = self._take(self.mask, idx)
         return (
             torch.from_numpy(b_o).to(self.device).float(),
             torch.from_numpy(b_a).to(self.device).long(),
             torch.from_numpy(b_r).to(self.device).float(),
             torch.from_numpy(b_p).to(self.device).float(),
-            torch.from_numpy(b_done).to(self.device).float(),
-            torch.from_numpy(b_mask).to(self.device).float()
+            torch.from_numpy(b_done).to(self.device).float()
         )
 
     def _stack_obs(self, enc_obs, dones):
@@ -375,7 +369,7 @@ class VecReplayBuffer(object):
             obs (numpy.array): shape (nenv, nstep + 1, nc * nstack, nh, nw)
         """
         returnob_shape = (self.nenv, self.nsteps + 1,
-                          self.nstack * self.nc) + self.o_shape[2:]
+                          self.nstack * self.nc) + self.o_shape[1:]
 
         obs = np.zeros(returnob_shape, dtype=enc_obs.dtype)
         mask = np.ones((self.nenv, self.nsteps + 1), dtype=enc_obs.dtype)

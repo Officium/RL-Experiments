@@ -10,19 +10,19 @@ import os
 __all__ = ['get_logger']
 
 
-class Singleton(type):
+class Singleton(object):
     _instances = dict()
 
-    def __call__(cls, *args, **kwargs):
+    def __new__(cls, *args, **kwargs):
         if cls not in cls._instances:
-            cls._instances[cls] = \
-                super(Singleton, cls).__call__(*args, **kwargs)
+            instance = super(Singleton, cls).__new__(cls, *args, **kwargs)
+            cls._instances[cls] = instance
         return cls._instances[cls]
 
 
-class _Logger(object):
-    __metaclass__ = Singleton
+class _Logger(Singleton):
 
+    _loggers = dict()
     logDir = os.path.join(os.path.curdir, '..', 'logs')
     defaultKey = 'log'
     os.makedirs(logDir, exist_ok=True)
@@ -33,9 +33,7 @@ class _Logger(object):
     logBackupCount = 0  # 10
 
     def __init__(self):
-        self._loggers = dict()
-        os.makedirs(_Logger.logDir, exist_ok=True)
-        self._add_logger(_Logger.defaultKey)
+        pass
 
     def _add_logger(self, key):
         # Reference: https://docs.python.org/2/library/logging.handlers.html
@@ -53,11 +51,12 @@ class _Logger(object):
         log_handler.setFormatter(logging.Formatter(_Logger.logFormat))
         logger.addHandler(log_handler)
 
-        # # stream handler (default sys.stderr)
-        # log_handler = logging.StreamHandler()
-        # log_handler.setLevel(_Logger.logLevel)
-        # log_handler.setFormatter(logging.Formatter(_Logger.logFormat))
-        # logger.addHandler(log_handler)
+        # stream handler (default sys.stderr)
+        log_handler = logging.StreamHandler()
+        log_handler.setLevel(_Logger.logLevel)
+        log_handler.setFormatter(logging.Formatter(_Logger.logFormat))
+        logger.addHandler(log_handler)
+
         self._loggers[key] = logger
 
     def __getitem__(self, key):
@@ -65,8 +64,8 @@ class _Logger(object):
             key = _Logger.defaultKey
         else:
             key = str(key)
-            if self._loggers.get(key) is None:
-                self._add_logger(key)
+        if self._loggers.get(key) is None:
+            self._add_logger(key)
         return self._loggers[key]
 
 

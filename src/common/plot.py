@@ -9,10 +9,11 @@ from matplotlib import pyplot as plt
 
 
 xscale = {
-    'ppo': 1024 * 4,  # 1024 means timestep per update, 4 means skip4frame
-    'trpo': 4096 * 4,
-    'dqn': 4 * 4,
-    'a2c': 5 * 4,
+    'ppo': 1024 * 4,  # 1024 timesteps/log, 4 skipped frames/observation
+    'trpo': 2048 * 4,
+    'dqn': 1000 * 4,
+    'a2c': 8 * 4,
+    'acer': 160 * 4,
 }
 COLORS = [
     'blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple',
@@ -36,7 +37,8 @@ for path in sys.argv[1:]:
                     eprews[alg][-1].extend([float(rew)] * (nan + 1))
                     nan = 0
 
-f, axarr = plt.subplots(1, len(eprews), sharex=False, squeeze=False)
+f, axarr = plt.subplots(1, len(eprews),
+                        sharex=False, sharey=False, squeeze=False)
 for i, (alg, rews) in enumerate(eprews.items()):
     ax = axarr[0][i]
     min_length = min(len(rs) for rs in rews)

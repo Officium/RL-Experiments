@@ -25,7 +25,8 @@ def atari(env):
         c=10.0,
         trust_region=True,
         alpha=0.99,
-        max_kl=1
+        max_kl=1,
+        ob_scale=1 / 255.0
     )
 
 
