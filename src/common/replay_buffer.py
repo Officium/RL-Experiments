@@ -175,29 +175,34 @@ class ReplayBuffer(object):
     def __len__(self):
         return len(self._storage)
 
-    def add(self, o, a, r, o_, d):
-        data = (o, a, r, o_, d)
+    def add(self, *args):
         if self._next_idx >= len(self._storage):
-            self._storage.append(data)
+            self._storage.append(args)
         else:
-            self._storage[self._next_idx] = data
+            self._storage[self._next_idx] = args
         self._next_idx = (self._next_idx + 1) % self._maxsize
 
     def _encode_sample(self, idxes):
         b_o, b_a, b_r, b_o_, b_d = [], [], [], [], []
+        b_extras = [[] for _ in range(len(self._storage[0]) - 5)]
         for i in idxes:
-            o, a, r, o_, d = self._storage[i]
+            o, a, r, o_, d, *extras = self._storage[i]
             b_o.append(o.astype('float32'))
-            b_a.append([a])
-            b_r.append([r])
+            b_a.append(a)
+            b_r.append(r)
             b_o_.append(o_.astype('float32'))
-            b_d.append([int(d)])
+            b_d.append(d)
+            for j, extra in enumerate(extras):
+                b_extras[j].append(extra)
         res = (
             torch.from_numpy(np.asarray(b_o)).to(self._device),
             torch.from_numpy(np.asarray(b_a)).to(self._device).long(),
             torch.from_numpy(np.asarray(b_r)).to(self._device).float(),
             torch.from_numpy(np.asarray(b_o_)).to(self._device),
             torch.from_numpy(np.asarray(b_d)).to(self._device).float(),
+        ) + tuple(
+            torch.from_numpy(np.asarray(b_extra)).to(self._device).float()
+            for b_extra in b_extras
         )
         return res
 
@@ -280,106 +285,3 @@ class PrioritizedReplayBuffer(ReplayBuffer):
             self._it_min[idx] = priority ** self._alpha
 
             self._max_priority = max(self._max_priority, priority)
-
-
-class VecReplayBuffer(object):
-    """Replay buffer used in ACER. Parrallel envs and multi-step are considered.
-    Note that this buffer is different with replay buffer used in DQN.
-    """
-    def __init__(self, env, nenv, nsteps, size, device):
-        self.nsteps = nsteps
-        self.o_shape = env.observation_space.shape
-        self.o_dtype = env.observation_space.dtype
-        self.a_num = env.action_space.n
-        self.a_dtype = env.action_space.dtype
-        self.nenv = nenv
-        self.nstack = env.k
-        self.nc = self.o_shape[0] // self.nstack
-        self.nbatch = self.nenv * self.nsteps
-        # Each loc contains nenv * nsteps frames
-        self.size = size // self.nsteps
-
-        # Memory
-        s = (self.nsteps + self.nstack, self.nc) + self.o_shape[1:]
-        self.enc_o = np.empty((self.size, self.nenv) + s, dtype=self.o_dtype)
-        s = (self.size, self.nenv, self.nsteps)
-        self.a = np.empty(s, dtype=self.a_dtype)
-        self.r = np.empty(s, dtype=np.float32)
-        self.p = np.empty(s + (self.a_num, ), dtype=np.float32)
-        self.done = np.empty(s, dtype=np.int32)
-
-        # Size indexes
-        self.next_idx = 0
-        self.nonempty_num = 0
-
-        self.device = device
-
-    def add(self, enc_o, a, r, p, done):
-        """Add sample
-        Args:
-            enc_o (numpy.array): shape (nenv, nstack + nstep, nc, nh, nw)
-            a (numpy.array): shape (nenv, nsteps)
-            r (numpy.array): shape (nenv, nsteps)
-            p (numpy.array): shape (nenv, nsteps, nacts)
-            done (numpy.array): shape (nenv, nsteps)
-        """
-        self.enc_o[self.next_idx] = enc_o
-        self.a[self.next_idx] = a
-        self.r[self.next_idx] = r
-        self.p[self.next_idx] = p
-        self.done[self.next_idx] = done
-        self.next_idx = (self.next_idx + 1) % self.size
-        self.nonempty_num = min(self.size, self.nonempty_num + 1)
-
-    def _take(self, x, idx):
-        out = np.empty((self.nenv, ) + x.shape[2:], dtype=x.dtype)
-        for i in range(self.nenv):
-            out[i] = x[idx[i], i]
-        return out
-
-    def sample(self):
-        """Get a sample per env. Across envs will lead higher correlation.
-        Returns:
-            o (numpy.array): shape (nenv, 1 + nstep, nstack * nc, nh, nw)
-            a (numpy.array): shape (nenv, nsteps)
-            r (numpy.array): shape (nenv, nsteps)
-            p (numpy.array): shape (nenv, nsteps, nacts)
-            done (numpy.array): shape (nenv, nsteps)
-        """
-        idx = np.random.randint(0, self.nonempty_num, self.nenv)
-        b_done = self._take(self.done, idx)
-        b_o = self._stack_obs(self._take(self.enc_o, idx), b_done)
-        b_a = self._take(self.a, idx)
-        b_r = self._take(self.r, idx)
-        b_p = self._take(self.p, idx)
-        return (
-            torch.from_numpy(b_o).to(self.device).float(),
-            torch.from_numpy(b_a).to(self.device).long(),
-            torch.from_numpy(b_r).to(self.device).float(),
-            torch.from_numpy(b_p).to(self.device).float(),
-            torch.from_numpy(b_done).to(self.device).float()
-        )
-
-    def _stack_obs(self, enc_obs, dones):
-        """Stack obseverations
-        Args:
-            enc_obs (numpy.array): shape (nenv, nstack + nstep, nc, nh, nw)
-            dones (numpy.array): shape (nenv, nsteps)
-        Returns:
-            obs (numpy.array): shape (nenv, nstep + 1, nc * nstack, nh, nw)
-        """
-        returnob_shape = (self.nenv, self.nsteps + 1,
-                          self.nstack * self.nc) + self.o_shape[1:]
-
-        obs = np.zeros(returnob_shape, dtype=enc_obs.dtype)
-        mask = np.ones((self.nenv, self.nsteps + 1), dtype=enc_obs.dtype)
-        mask[:, 1:] = 1.0 - dones
-        mask = mask.reshape(mask.shape + (1, 1, 1))
-
-        for i in range(self.nstack - 1, -1, -1):
-            obs[:, :, i*self.nc:(i+1)*self.nc] = enc_obs[:, i:i+self.nsteps+1]
-            if i < self.nstack - 1:
-                obs[:, :, i*self.nc:(i+1)*self.nc] *= mask
-                mask[:, 1:] *= mask[:, :-1]
-
-        return obs

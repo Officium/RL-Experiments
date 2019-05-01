@@ -181,7 +181,7 @@ def _generate(device, env, qnet, ob_scale,
             epret = eplen = 0
 
         # return data and update observation
-        yield (o, a, r, o_, int(done), infos)
+        yield (o, [a], [r], o_, [int(done)], infos)
         infos = dict()
         o = o_ if not done else env.reset()
 

@@ -53,7 +53,7 @@ class CNN(nn.Module):
 
         self.policy = nn.Sequential(
             nn.Linear(512, policy_dim),
-            nn.Softmax(1)
+            nn.LogSoftmax(1)
         )
         nn.init.orthogonal_(self.policy[0].weight, 1e-2)
         nn.init.constant_(self.policy[0].bias, 0)
@@ -64,6 +64,6 @@ class CNN(nn.Module):
 
     def forward(self, x):
         latent = self.feature(x)
-        prob, q = self.policy(latent), self.q(latent)
-        v = (prob * q).sum(-1, keepdim=True)
-        return prob, q, v
+        logp, q = self.policy(latent), self.q(latent)
+        v = (logp.exp() * q).sum(-1, keepdim=True)
+        return logp, q, v
