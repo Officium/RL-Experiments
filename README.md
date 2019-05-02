@@ -1,39 +1,51 @@
 # RL-Experiments
 
-The motivation of this project is to compare and modify deep reinforcement learning algorithms easily **for experiments**.
+RL-Experiments aims to modify and compare deep RL algorithms in single machine easily. 
+For distributed training, I highly recommend [ray](https://github.com/ray-project/ray).
 
-# Recent plan
+The codes refer to [openai/baselines](https://github.com/openai/baselines) mostly but 
+are implemented by PyTorch. We also highlight the differences between implementation and paper 
+which can be found by searching `highlight` in codes.
 
-1. Rewrite algorithms and add environment utils refer to [openai/baselines](https://github.com/openai/baselines).    
-2. Highlight the differences between implementation and paper.    
-3. Make codes following PEP8.    
-4. Based on PyTorch 1.0.   
 
-During that time, many internal or incomplete code will be committed. 
-If you mind, please checkout to the [old but stable version](https://github.com/Officium/RL-Experiments/tree/255aa7a9c03e38349d7c03540769eb9dfa91d33d). 
-Welcome any contributions!
+# Comparasion with openai/baselines
 
-# Implemented algorithms
+With the same default parameters in [openai/baselines](https://github.com/openai/baselines), 
+the performance and FPS averaging three random seeds on Pong are illustrated as follows.  
 
-* REINFORCE
-* DQN
-* DDPG
-* A3C
-* TRPO
-* PPO + GAE
-* RAINBOW
+![DQN-PongNoFrameskip-v4](src/baselines/dqn/PongNoFrameskip-v4.png)    
+
+![PPO-PongNoFrameskip-v4](src/baselines/ppo/PongNoFrameskip-v4.png)    
+
+![A2C-PongNoFrameskip-v4](src/baselines/a2c/PongNoFrameskip-v4.png)    
+
+![TRPO-PongNoFrameskip-v4](src/baselines/trpo/PongNoFrameskip-v4.png)    
+
+
+| | DQN | PPO | A2C | TRPO|
+|---|---|---|---|----|
+| Our | 260 | 1615 | 1700 | 1550 |
+| Baselines | 215 | 1200 | 1550 | 500 |
+
+Devices:
+* 1 NVIDIA GTX 1070 
+* 8 Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz
 
 # Dependency
 
 * Python: 3.5+
-* Gym: 0.10.3+
-* PyTorch: 0.4.0+
-* The code was checked at Windows 10, Ubuntu 16.04 and Mac OS.
+* PyTorch: 1.0.1+
+
 
 # Usage
 
 ```bash
 git clone https://github.com/Officium/RL-Experiments.git
 cd RL-Experiments/src
-python -m baselines.algorithm.demo  # replace `algorithm` by `TRPO`, `PPO` ...
+python run.py --env=CartPole-v1 --algorithm=dqn --number_timesteps=1e5
 ```
+
+
+# Future work
+* Support recurrent policy
+* Support multi-step and distributional DQN
