@@ -11,21 +11,14 @@ which can be found by searching `highlight` in codes.
 # Comparasion with openai/baselines
 
 With the same default parameters in [openai/baselines](https://github.com/openai/baselines), 
-the performance and FPS averaging three random seeds on Pong are illustrated as follows.  
+the FPS and performance averaging three random seeds on Pong are illustrated as follows.  
 
-![DQN-PongNoFrameskip-v4](src/baselines/dqn/PongNoFrameskip-v4.png)    
-
-![PPO-PongNoFrameskip-v4](src/baselines/ppo/PongNoFrameskip-v4.png)    
-
-![A2C-PongNoFrameskip-v4](src/baselines/a2c/PongNoFrameskip-v4.png)    
-
-![TRPO-PongNoFrameskip-v4](src/baselines/trpo/PongNoFrameskip-v4.png)    
-
-
-| | DQN | PPO | A2C | TRPO|
+|  | DQN | PPO | A2C | TRPO|
 |---|---|---|---|----|
 | Our | 260 | 1615 | 1700 | 1550 |
 | Baselines | 215 | 1200 | 1550 | 500 |
+
+![PongNoFrameskip-v4](imgs/PongNoFrameskip-v4.png)    
 
 Devices:
 * 1 NVIDIA GTX 1070 
