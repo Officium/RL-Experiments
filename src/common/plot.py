@@ -12,8 +12,7 @@ xscale = {
     'ppo': 1024 * 4,  # 1024 timesteps/log, 4 skipped frames/observation
     'trpo': 2048 * 4,
     'dqn': 1000 * 4,
-    'a2c': 8 * 4,
-    'acer': 160 * 4,
+    'a2c': 8 * 4
 }
 COLORS = [
     'blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple',
