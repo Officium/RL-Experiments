@@ -8,7 +8,7 @@ are implemented by PyTorch. We also highlight the differences between implementa
 which can be found by searching `highlight` in codes.
 
 
-# Comparasion with openai/baselines
+# Evaluation
 
 With the same default parameters in [openai/baselines](https://github.com/openai/baselines), 
 the FPS and performance averaging three random seeds on Pong are illustrated as follows.  
