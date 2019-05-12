@@ -24,6 +24,7 @@ __all__ = (
     'RewardScaler',  # reward scale
     'SubprocVecEnv',  # vectorized env wrapper
     'VecFrameStack',  # stack frames in vectorized env
+    'Monitor',  # Episode reward and length monitor
 )
 cv2.ocl.setUseOpenCL(False)
 
@@ -372,10 +373,6 @@ class SubprocVecEnv(object):
         self.observation_space = observation_space
         self.action_space = action_space
 
-        # monitor attributes
-        self.eprets = None
-        self.eplens = None
-
     def _step_async(self, actions):
         """
             Tell all the environments to start taking a step
@@ -411,8 +408,6 @@ class SubprocVecEnv(object):
             be cancelled and step_wait() should not be called
             until step_async() is invoked again.
             """
-        self.eprets = np.zeros(self.num_envs, 'float')
-        self.eplens = np.zeros(self.num_envs, 'int')
         for remote in self.remotes:
             remote.send(('reset', None))
         return np.stack([remote.recv() for remote in self.remotes])
@@ -439,15 +434,24 @@ class SubprocVecEnv(object):
 
     def step(self, actions):
         self._step_async(actions)
-        o_, r, d, info = self._step_wait()
-        self.eprets += r
-        self.eplens += 1
-        newinfos = []
-        zipped_data = zip(d, self.eprets, self.eplens, info)
-        for (i, (done, ret, eplen, info)) in enumerate(zipped_data):
-            if done:
-                self.eprets[i] = 0
-                self.eplens[i] = 0
-                info['episode'] = {'r': ret, 'l': eplen}
-            newinfos.append(info)
-        return o_, r, d, newinfos
+        return self._step_wait()
+
+
+class Monitor(gym.Wrapper):
+    def __init__(self, env):
+        super(Monitor, self).__init__(env)
+        self._monitor_rewards = None
+
+    def reset(self, **kwargs):
+        self._monitor_rewards = []
+        return self.env.reset(**kwargs)
+
+    def step(self, action):
+        o_, r, done, info = self.env.step(action)
+        self._monitor_rewards.append(r)
+        if done:
+            info['episode'] = {
+                'r': sum(self._monitor_rewards),
+                'l': len(self._monitor_rewards)}
+        return o_, r, done, info
+

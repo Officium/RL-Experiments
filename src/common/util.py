@@ -48,6 +48,7 @@ def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
         assert 'NoFrameskip' in env.spec.id
         env = NoopResetEnv(env, noop_max=30)
         env = MaxAndSkipEnv(env, skip=4)
+        env = Monitor(env)
         # deepmind wrap
         env = EpisodicLifeEnv(env)
         if 'FIRE' in env.unwrapped.get_action_meanings():
@@ -57,7 +58,7 @@ def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
         if frame_stack:
             env = FrameStack(env, 4)
     elif env_type == 'classic_control':
-        env = gym.make(env_id)
+        env = Monitor(gym.make(env_id))
     else:
         raise NotImplementedError
     if reward_scale != 1:
