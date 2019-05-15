@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from collections import deque
@@ -13,8 +14,9 @@ from common.logger import get_logger
 from common.util import scale_ob, Trajectories
 
 
-def learn(device,
-          env, nenv, seed,
+def learn(key,
+          device,
+          env, nenv,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
@@ -37,10 +39,9 @@ def learn(device,
     cliprange (float): clipping range
 
     """
-    name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
-    logger = get_logger(name)
-    logger.warn('This implementation of ppo only '
-                'support discrete action spaces now!')
+    logger = logging.getLogger(key)
+    logger.warning('This implementation of ppo only '
+                   'support discrete action spaces now!')
 
     policy = network.to(device)
     number_timesteps = number_timesteps // nenv

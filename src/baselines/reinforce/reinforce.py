@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 from collections import deque
@@ -9,7 +10,8 @@ from common.logger import get_logger
 from common.util import scale_ob, Trajectories
 
 
-def learn(device,
+def learn(key,
+          device,
           env, nenv, seed,
           number_timesteps,
           network, optimizer,
@@ -26,8 +28,7 @@ def learn(device,
         batch_episode (int): how many episodes will be sampled before update
 
     """
-    name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
-    logger = get_logger(name)
+    logger = logging.getLogger(key)
 
     policy = network.to(device)
     generator = _generate(device, env, policy, ob_scale,

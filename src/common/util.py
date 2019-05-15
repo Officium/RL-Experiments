@@ -2,6 +2,7 @@
 Note that this file is a MPI-free version of
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
+import logging
 import random
 import re
 from functools import partial
@@ -14,21 +15,19 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from common.logger import get_logger
+from common.logger import init_logger
 from common.wrappers import *
 
 
-logger = get_logger()
 # env_id -> env_type
 id2type = dict()
 for _env in gym.envs.registry.all():
     id2type[_env.id] = _env._entry_point.split(':')[0].rsplit('.', 1)[1]
 
 
-def build_env(env_id, algorithm, env_type, **kwargs):
+def build_env(env_id, algorithm, env_type, seed, **kwargs):
     """ Build env based on options """
     assert env_type in {'atari', 'classic_control'}
-    seed = kwargs['seed']
     reward_scale = kwargs.pop('reward_scale')
     nenv = kwargs.pop('nenv') or cpu_count() // (1 + (platform == 'darwin'))
     stack = env_type == 'atari'
@@ -93,11 +92,17 @@ def get_algorithm_module(algorithm, submodule):
     return import_module('.'.join(['baselines', algorithm, submodule]))
 
 
-def learn(env_id, algorithm, **kwargs):
+def learn(env_id, algorithm, seed, **kwargs):
     """ Learn entry """
-    set_global_seeds(kwargs['seed'])
+    key = '{}_{}_{}'.format(env_id, algorithm, seed)
+    init_logger(key)
+    logger = logging.getLogger(key)
+
+    set_global_seeds(seed)
+
     env_type = id2type[env_id]
-    env, kwargs = build_env(env_id, algorithm, env_type, **kwargs)
+    env, kwargs = build_env(env_id, algorithm, env_type, seed, **kwargs)
+
     algorithm = algorithm.lower()
     specific_options = get_algorithm_defaults(env, env_type, algorithm)
     for k, v in kwargs.items():
@@ -109,8 +114,9 @@ def learn(env_id, algorithm, **kwargs):
                           for k, v in specific_options.items()) + s
     logger.info('Start training `{}` on `{}` with settings {}'
                 .format(algorithm, env, option_repr))
+
     try:
-        return getattr(module, 'learn')(env=env, **specific_options)
+        return getattr(module, 'learn')(key, env=env, **specific_options)
     except Exception as e:
         logger.critical('algorithm execute fail', exc_info=e)
 
