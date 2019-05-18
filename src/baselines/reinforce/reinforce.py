@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from collections import deque
@@ -6,13 +5,12 @@ from collections import deque
 import torch
 import torch.distributions
 
-from common.logger import get_logger
 from common.util import scale_ob, Trajectories
 
 
-def learn(key,
+def learn(logger,
           device,
-          env, nenv, seed,
+          env, nenv,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
@@ -28,8 +26,6 @@ def learn(key,
         batch_episode (int): how many episodes will be sampled before update
 
     """
-    logger = logging.getLogger(key)
-
     policy = network.to(device)
     generator = _generate(device, env, policy, ob_scale,
                           number_timesteps // nenv, gamma, timesteps_per_batch)

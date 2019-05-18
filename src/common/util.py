@@ -116,7 +116,7 @@ def learn(env_id, algorithm, seed, **kwargs):
                 .format(algorithm, env, option_repr))
 
     try:
-        return getattr(module, 'learn')(key, env=env, **specific_options)
+        return getattr(module, 'learn')(logger, env=env, **specific_options)
     except Exception as e:
         logger.critical('algorithm execute fail', exc_info=e)
 

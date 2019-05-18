@@ -1,4 +1,3 @@
-import logging
 import math
 import os
 import random
@@ -16,7 +15,7 @@ from common.util import scale_ob
 from common.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 
 
-def learn(key,
+def learn(logger,
           device, env,
           number_timesteps,
           network, optimizer,
@@ -54,7 +53,6 @@ def learn(key,
     prioritized_replay_beta0 (float): beta parameter for prioritized replay
 
     """
-    logger = logging.getLogger(key)
     logger.info('Note that Rainbow features supported in current version is '
                 'consitent with openai/baselines, which means `Multi-step` and '
                 '`Distributional` are missing. Welcome any contributions!')

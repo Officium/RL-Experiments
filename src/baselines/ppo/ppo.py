@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from collections import deque
@@ -10,11 +9,10 @@ import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
 
-from common.logger import get_logger
 from common.util import scale_ob, Trajectories
 
 
-def learn(key,
+def learn(logger,
           device,
           env, nenv,
           number_timesteps,
@@ -39,7 +37,6 @@ def learn(key,
     cliprange (float): clipping range
 
     """
-    logger = logging.getLogger(key)
     logger.warning('This implementation of ppo only '
                    'support discrete action spaces now!')
 

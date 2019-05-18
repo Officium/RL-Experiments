@@ -1,4 +1,3 @@
-import logging
 import os
 import time
 from collections import deque
@@ -11,7 +10,7 @@ from torch.optim.lr_scheduler import LambdaLR
 from common.util import scale_ob, Trajectories
 
 
-def learn(key,
+def learn(logger,
           device,
           env, nenv,
           number_timesteps,
@@ -32,8 +31,6 @@ def learn(key,
     vf_coef (float): value function loss coefficient in the objective
 
     """
-    logger = logging.getLogger(key)
-
     policy = network.to(device)
     number_timesteps = number_timesteps // nenv
     generator = _generate(
