@@ -11,13 +11,12 @@ import torch.distributions
 import torch.nn as nn
 from torch.nn.functional import softmax, log_softmax
 
-from common.logger import get_logger
 from common.util import scale_ob
 from common.replay_buffer import ReplayBuffer, PrioritizedReplayBuffer
 
 
-def learn(device,
-          env, seed,
+def learn(logger,
+          device, env,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
@@ -54,8 +53,6 @@ def learn(device,
     prioritized_replay_beta0 (float): beta parameter for prioritized replay
 
     """
-    name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
-    logger = get_logger(name)
     logger.info('Note that Rainbow features supported in current version is '
                 'consitent with openai/baselines, which means `Multi-step` and '
                 '`Distributional` are missing. Welcome any contributions!')
@@ -135,7 +132,6 @@ def _generate(device, env, qnet, ob_scale,
 
     o = env.reset()
     infos = dict()
-    epret = eplen = 0
     for n in range(1, number_timesteps + 1):
         epsilon = 1.0 - (1.0 - exploration_final_eps) * n / explore_steps
         epsilon = max(exploration_final_eps, epsilon)
@@ -173,13 +169,12 @@ def _generate(device, env, qnet, ob_scale,
                     a = q_perturb.argmax(1).cpu().numpy()[0]
 
         # take action in env
-        o_, r, done, _ = env.step(a)
-        epret += r
-        eplen += 1
-        if done:
-            infos = {'eprewmean': epret, 'eplenmean': eplen}
-            epret = eplen = 0
-
+        o_, r, done, info = env.step(a)
+        if info.get('episode'):
+            infos = {
+                'eplenmean': info['episode']['l'],
+                'eprewmean': info['episode']['r'],
+            }
         # return data and update observation
         yield (o, [a], [r], o_, [int(done)], infos)
         infos = dict()

@@ -10,7 +10,7 @@ from common.util import learn, parse_all_args
 """ Some notice """
 print("""
     Notes:
-        CUDA usage is depend on `CUDA_VISIABLE_DEVICES`;
+        CUDA usage is depend on `CUDA_VISIBLE_DEVICES`;
         Log will be recorded at ../logs/{algorithm}_{seed};
         If you need multi-gpu training or other nn specific features, please 
         modify the default.py file in corresponding algorithm folder.

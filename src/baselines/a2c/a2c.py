@@ -7,12 +7,12 @@ import torch.distributions
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
-from common.logger import get_logger
 from common.util import scale_ob, Trajectories
 
 
-def learn(device,
-          env, nenv, seed,
+def learn(logger,
+          device,
+          env, nenv,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
@@ -31,9 +31,6 @@ def learn(device,
     vf_coef (float): value function loss coefficient in the objective
 
     """
-    name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
-    logger = get_logger(name)
-
     policy = network.to(device)
     number_timesteps = number_timesteps // nenv
     generator = _generate(

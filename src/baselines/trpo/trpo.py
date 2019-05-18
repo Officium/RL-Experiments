@@ -10,12 +10,12 @@ from torch.nn.utils.convert_parameters import vector_to_parameters
 from torch.nn.utils.convert_parameters import parameters_to_vector
 from torch.utils.data import DataLoader
 
-from common.logger import get_logger
 from common.util import scale_ob, Trajectories
 
 
-def learn(device,
-          env, nenv, seed,
+def learn(logger,
+          device,
+          env, nenv,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
@@ -44,10 +44,8 @@ def learn(device,
         entcoeff (float): coefficient of policy entropy term
 
     """
-    name = '{}_{}'.format(os.path.split(__file__)[-1][:-3], seed)
-    logger = get_logger(name)
-    logger.warn('This implementation of trpo only '
-                'support discrete action spaces now!')
+    logger.warning('This implementation of trpo only '
+                   'support discrete action spaces now!')
 
     policy, value = map(lambda net: net.to(device), network)
     number_timesteps = number_timesteps // nenv
