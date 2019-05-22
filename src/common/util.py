@@ -34,6 +34,8 @@ def build_env(env_id, algorithm, env_type, seed, **kwargs):
     if algorithm == 'dqn':
         env = make_env(env_id, env_type, seed, reward_scale, stack)
     else:
+        if algorithm == 'trpo':
+            nenv = 1
         kwargs['nenv'] = nenv
         env = make_vec_env(env_id, env_type, nenv, seed, reward_scale, stack)
 

@@ -1,7 +1,7 @@
 import math
 
 import torch.nn as nn
-from torch.optim import RMSprop
+from torch.optim import Adam
 
 from common.util import Flatten
 
@@ -10,7 +10,7 @@ def atari(env):
     in_dim = env.observation_space.shape
     policy_dim = env.action_space.n
     network = CNN(in_dim, policy_dim)
-    optimizer = RMSprop(network.parameters(), 7e-4, eps=1e-5)
+    optimizer = Adam(network.parameters(), 7e-4, eps=1e-5)
     return dict(
         network=network,
         optimizer=optimizer,
@@ -27,7 +27,7 @@ def classic_control(env):
     in_dim = env.observation_space.shape[0]
     policy_dim = env.action_space.n
     network = MLP(in_dim, policy_dim)
-    optimizer = RMSprop(network.parameters(), 1e-2, eps=1e-5)
+    optimizer = Adam(network.parameters(), 1e-2, eps=1e-5)
     return dict(
         network=network,
         optimizer=optimizer,
