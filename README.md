@@ -10,16 +10,47 @@ which can be found by searching `highlight` in codes.
 
 # Evaluation
 
-With the same default parameters in [openai/baselines](https://github.com/openai/baselines), 
-the FPS and performance averaging three random seeds on Pong are illustrated as follows.  
+With the same default parameters in [openai/baselines](https://github.com/openai/baselines/commit/7bfbcf177eca8f46c0c0bfbb378e044539f5e061), 
+the FPS and performance with random seed 0 on four environments are illustrated as follows. 
+Our implementation is 15% faster than baseline on average in single machine. 
 
-|  | DQN | PPO | A2C | TRPO|
+### Pong
+
+|  | A2C | DQN | PPO | TRPO|
 |---|---|---|---|----|
-| Our | 260 | 1615 | 1700 | 1550 |
-| Baselines | 215 | 1200 | 1550 | 500 |
+| Our | 1667 | 277 | 1515 | 513 |
+| Baselines | 1596 | 246 | 1089 | 501 |
 
-![PongNoFrameskip-v4](imgs/PongNoFrameskip-v4.png)    
+![Pong](imgs/Pong.png)    
 
+### SpaceInvaders
+
+|  | A2C | DQN | PPO | TRPO|
+|---|---|---|---|----|
+| Our | 1667 | 278 | 1550 | 501 |
+| Baselines | 1572 | 247 | 1186 | 440 |
+
+![SpaceInvaders](imgs/SpaceInvaders.png) 
+
+### BeamRider
+
+|  | A2C | DQN | PPO | TRPO|
+|---|---|---|---|----|
+| Our | 1667 | 272 | 1515 | 494 |
+| Baselines | 1543 | 243 | 1062 | 451 |
+
+![BeamRider](imgs/BeamRider.png)  
+
+### Seaquest
+
+|  | A2C | DQN | PPO | TRPO|
+|---|---|---|---|----|
+| Our | 1667 | 275 | 1515 | 501 |
+| Baselines | 1572 | 236 | 1203 | 481 |
+
+![Seaquest](imgs/Seaquest.png)  
+
+ 
 Devices:
 * 1 NVIDIA GTX 1070 
 * 8 Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz
