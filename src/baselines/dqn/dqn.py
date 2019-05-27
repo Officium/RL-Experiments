@@ -106,8 +106,8 @@ def learn(logger,
                     delta_z = float(max_value - min_value) / (atom_num - 1)
                     z_i = torch.linspace(min_value, max_value, atom_num)
                     b_a_ = (b_dist_ * z_i).sum(-1).argmax(1)
-                    b_tzj = (gamma * (1 - b_d[:, None]) * z_i[None, :]
-                             + b_r[:, None]).clamp(min_value, max_value)
+                    b_tzj = (gamma * (1 - b_d) * z_i[None, :]
+                             + b_r).clamp(min_value, max_value)
                     b_i = (b_tzj - min_value) / delta_z
                     b_l = b_i.floor()
                     b_u = b_i.ceil()
@@ -115,7 +115,7 @@ def learn(logger,
                     temp = b_dist_[torch.arange(batch_size), b_a_, :]
                     b_m.scatter_add_(1, b_l.long(), temp * (b_u - b_i))
                     b_m.scatter_add_(1, b_u.long(), temp * (b_i - b_l))
-                b_q = qnet(b_o)[torch.arange(batch_size), b_a, :].squeeze(1)
+                b_q = qnet(b_o)[torch.arange(batch_size), b_a.squeeze(1), :]
                 kl_error = -(b_q * b_m).sum(1)
                 priorities = kl_error.detach().cpu().clamp(1e-6).numpy()
                 loss = kl_error.mean()
@@ -153,7 +153,8 @@ def _generate(device, env, qnet, ob_scale,
     noise_scale = 1e-2
     action_dim = env.action_space.n
     explore_steps = number_timesteps * exploration_fraction
-    vrange = torch.linspace(min_value, max_value, atom_num).to(device)
+    if atom_num > 1:
+        vrange = torch.linspace(min_value, max_value, atom_num).to(device)
 
     o = env.reset()
     infos = dict()
