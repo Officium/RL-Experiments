@@ -25,7 +25,7 @@ def learn(logger,
           exploration_fraction, exploration_final_eps,
           batch_size, train_freq, learning_starts, target_network_update_freq,
           buffer_size, prioritized_replay, prioritized_replay_alpha,
-          prioritized_replay_beta0):
+          prioritized_replay_beta0, atom_num, min_value, max_value):
     """
     Papers:
     Mnih V, Kavukcuoglu K, Silver D, et al. Human-level control through deep
@@ -51,11 +51,11 @@ def learn(logger,
     prioritized_replay (bool): if True prioritized replay buffer will be used.
     prioritized_replay_alpha (float): alpha parameter for prioritized replay
     prioritized_replay_beta0 (float): beta parameter for prioritized replay
+    atom_num (int): atom number in distributional RL for atom_num > 1
+    min_value (float): min value in distributional RL
+    max_value (float): max value in distributional RL
 
     """
-    logger.info('Note that Rainbow features supported in current version is '
-                'consitent with openai/baselines, which means `Multi-step` and '
-                '`Distributional` are missing. Welcome any contributions!')
 
     qnet = network.to(device)
     qtar = deepcopy(qnet)
@@ -67,7 +67,11 @@ def learn(logger,
         buffer = ReplayBuffer(buffer_size, device)
     generator = _generate(device, env, qnet, ob_scale,
                           number_timesteps, param_noise,
-                          exploration_fraction, exploration_final_eps)
+                          exploration_fraction, exploration_final_eps,
+                          atom_num, min_value, max_value)
+    if atom_num > 1:
+        delta_z = float(max_value - min_value) / (atom_num - 1)
+        z_i = torch.linspace(min_value, max_value, atom_num).to(device)
 
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     start_ts = time.time()
@@ -84,25 +88,46 @@ def learn(logger,
             b_o, b_a, b_r, b_o_, b_d, *extra = buffer.sample(batch_size)
             b_o.mul_(ob_scale)
             b_o_.mul_(ob_scale)
-            b_q = qnet(b_o).gather(1, b_a)
-            with torch.no_grad():
-                if double_q:
-                    b_a_ = qnet(b_o_).argmax(1).unsqueeze(1)
-                    b_q_ = (1 - b_d) * qtar(b_o_).gather(1, b_a_)
+
+            if atom_num == 1:
+                with torch.no_grad():
+                    if double_q:
+                        b_a_ = qnet(b_o_).argmax(1).unsqueeze(1)
+                        b_q_ = (1 - b_d) * qtar(b_o_).gather(1, b_a_)
+                    else:
+                        b_q_ = (1 - b_d) * qtar(b_o_).max(1, keepdim=True)[0]
+                b_q = qnet(b_o).gather(1, b_a)
+                abs_td_error = (b_q - (b_r + gamma * b_q_)).abs()
+                priorities = abs_td_error.detach().cpu().clamp(1e-6).numpy()
+                if extra:
+                    loss = (extra[0] * huber_loss(abs_td_error)).mean()
                 else:
-                    b_q_ = (1 - b_d) * qtar(b_o_).max(1, keepdim=True)[0]
-            abs_td_error = (b_q - (b_r + gamma * b_q_)).abs()
-            if extra:
-                loss = (extra[0] * huber_loss(abs_td_error)).mean()  # weighted
+                    loss = huber_loss(abs_td_error).mean()
             else:
-                loss = huber_loss(abs_td_error).mean()
+                with torch.no_grad():
+                    b_dist_ = qtar(b_o_).exp()
+                    b_a_ = (b_dist_ * z_i).sum(-1).argmax(1)
+                    b_tzj = (gamma * (1 - b_d) * z_i[None, :]
+                             + b_r).clamp(min_value, max_value)
+                    b_i = (b_tzj - min_value) / delta_z
+                    b_l = b_i.floor()
+                    b_u = b_i.ceil()
+                    b_m = torch.zeros(batch_size, atom_num).to(device)
+                    temp = b_dist_[torch.arange(batch_size), b_a_, :]
+                    b_m.scatter_add_(1, b_l.long(), temp * (b_u - b_i))
+                    b_m.scatter_add_(1, b_u.long(), temp * (b_i - b_l))
+                b_q = qnet(b_o)[torch.arange(batch_size), b_a.squeeze(1), :]
+                kl_error = -(b_q * b_m).sum(1)
+                # use kl error as priorities as proposed by Rainbow
+                priorities = kl_error.detach().cpu().clamp(1e-6).numpy()
+                loss = kl_error.mean()
+
             optimizer.zero_grad()
             loss.backward()
             if grad_norm is not None:
                 nn.utils.clip_grad_norm_(qnet.parameters(), grad_norm)
             optimizer.step()
             if prioritized_replay:
-                priorities = abs_td_error.detach().cpu().clamp(1e-6).numpy()
                 buffer.update_priorities(extra[1], priorities)
 
         # update target net and log
@@ -124,11 +149,14 @@ def learn(logger,
 
 def _generate(device, env, qnet, ob_scale,
               number_timesteps, param_noise,
-              exploration_fraction, exploration_final_eps):
+              exploration_fraction, exploration_final_eps,
+              atom_num, min_value, max_value):
     """ Generate training batch sample """
     noise_scale = 1e-2
     action_dim = env.action_space.n
     explore_steps = number_timesteps * exploration_fraction
+    if atom_num > 1:
+        vrange = torch.linspace(min_value, max_value, atom_num).to(device)
 
     o = env.reset()
     infos = dict()
@@ -140,6 +168,8 @@ def _generate(device, env, qnet, ob_scale,
         with torch.no_grad():
             ob = scale_ob(np.expand_dims(o, 0), device, ob_scale)
             q = qnet(ob)
+            if atom_num > 1:
+                q = (q.exp() * vrange).sum(2)
             if not param_noise:
                 if random.random() < epsilon:
                     a = int(random.random() * action_dim)
@@ -155,6 +185,8 @@ def _generate(device, env, qnet, ob_scale,
                         std = torch.empty_like(m.bias).fill_(noise_scale)
                         m.bias.data.add_(torch.normal(0, std).to(device))
                 q_perturb = qnet(ob)
+                if atom_num > 1:
+                    q_perturb = (q_perturb.exp() * vrange).sum(2)
                 kl_perturb = ((log_softmax(q, 1) - log_softmax(q_perturb, 1)) *
                               softmax(q, 1)).sum(-1).mean()
                 kl_explore = -math.log(1 - epsilon + epsilon / action_dim)

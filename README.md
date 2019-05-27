@@ -5,14 +5,24 @@ For distributed training, I highly recommend [ray](https://github.com/ray-projec
 
 The codes refer to [openai/baselines](https://github.com/openai/baselines) mostly but 
 are implemented by PyTorch. We also highlight the differences between implementation and paper 
-which can be found by searching `highlight` in codes.
+which can be found by searching `highlight` in codes. Evaluated on 4 atari games, our implementation 
+is **15%** faster than baseline with similar performance on average in single machine.
+
+
+# Dependency
+
+* Python: 3.5+
+* PyTorch: 1.0.1+
 
 
 # Evaluation
 
 With the same default parameters in [openai/baselines](https://github.com/openai/baselines/commit/7bfbcf177eca8f46c0c0bfbb378e044539f5e061), 
 the FPS and performance with random seed 0 on four environments are illustrated as follows. 
-Our implementation is 15% faster than baseline on average in single machine. 
+
+Devices:
+* 1 NVIDIA GTX 1070
+* 8 Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz
 
 ### Pong
 
@@ -50,16 +60,6 @@ Our implementation is 15% faster than baseline on average in single machine.
 
 ![Seaquest](imgs/Seaquest.png)  
 
- 
-Devices:
-* 1 NVIDIA GTX 1070 
-* 8 Intel(R) Core(TM) i7-7700K CPU @ 4.20GHz
-
-# Dependency
-
-* Python: 3.5+
-* PyTorch: 1.0.1+
-
 
 # Usage
 
@@ -70,6 +70,10 @@ python run.py --env=CartPole-v1 --algorithm=dqn --number_timesteps=1e5
 ```
 
 
-# Future work
-* Support recurrent policy
-* Support multi-step and distributional DQN
+# Implemented algorithms
+
+* A2C
+* DQN (with double, C51, dueling, noisy and prioritized replay)
+* PPO
+* REINFORCE
+* TRPO
