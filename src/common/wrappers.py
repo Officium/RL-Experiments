@@ -53,7 +53,7 @@ class NoopResetEnv(gym.Wrapper):
         """Sample initial states by taking random number of no-ops on reset.
         No-op is assumed to be action 0.
         """
-        gym.Wrapper.__init__(self, env)
+        super(NoopResetEnv, self).__init__(env)
         self.noop_max = noop_max
         self.override_num_noops = None
         self.noop_action = 0
@@ -81,7 +81,7 @@ class NoopResetEnv(gym.Wrapper):
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env):
         """Take action on reset for environments that are fixed until firing."""
-        gym.Wrapper.__init__(self, env)
+        super(FireResetEnv, self).__init__(env)
         assert env.unwrapped.get_action_meanings()[1] == 'FIRE'
         assert len(env.unwrapped.get_action_meanings()) >= 3
 
@@ -104,7 +104,7 @@ class EpisodicLifeEnv(gym.Wrapper):
         """Make end-of-life == end-of-episode, but only reset on true game over.
         Done by DeepMind for the DQN and co. since it helps value estimation.
         """
-        gym.Wrapper.__init__(self, env)
+        super(EpisodicLifeEnv, self).__init__(env)
         self.lives = 0
         self.was_real_done = True
 
@@ -139,7 +139,7 @@ class EpisodicLifeEnv(gym.Wrapper):
 class MaxAndSkipEnv(gym.Wrapper):
     def __init__(self, env, skip=4):
         """Return only every `skip`-th frame"""
-        gym.Wrapper.__init__(self, env)
+        super(MaxAndSkipEnv, self).__init__(env)
         # most recent raw observations (for max pooling across time steps)
         shape = (2, ) + env.observation_space.shape
         self._obs_buffer = np.zeros(shape, dtype=np.uint8)
@@ -169,10 +169,9 @@ class MaxAndSkipEnv(gym.Wrapper):
 
 class ClipRewardEnv(gym.RewardWrapper):
     def __init__(self, env):
-        gym.RewardWrapper.__init__(self, env)
+        super(ClipRewardEnv, self).__init__(env)
 
-    @staticmethod
-    def reward(reward):
+    def reward(self, reward):
         """Bin reward to {+1, 0, -1} by its sign."""
         return np.sign(reward)
 
@@ -180,7 +179,7 @@ class ClipRewardEnv(gym.RewardWrapper):
 class WarpFrame(gym.ObservationWrapper):
     def __init__(self, env, width=84, height=84, grayscale=True):
         """Warp frames to 84x84 as done in the Nature paper and later work."""
-        gym.ObservationWrapper.__init__(self, env)
+        super(WarpFrame, self).__init__(env)
         self.width = width
         self.height = height
         self.grayscale = grayscale
@@ -205,7 +204,7 @@ class FrameStack(gym.Wrapper):
         Returns lazy array, which is much more memory efficient.
         See Also `LazyFrames`
         """
-        gym.Wrapper.__init__(self, env)
+        super(FrameStack, self).__init__(env)
         self.k = k
         self.frames = deque([], maxlen=k)
         shp = env.observation_space.shape
