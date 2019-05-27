@@ -69,6 +69,9 @@ def learn(logger,
                           number_timesteps, param_noise,
                           exploration_fraction, exploration_final_eps,
                           atom_num, min_value, max_value)
+    if atom_num > 1:
+        delta_z = float(max_value - min_value) / (atom_num - 1)
+        z_i = torch.linspace(min_value, max_value, atom_num).to(device)
 
     infos = {'eplenmean': deque(maxlen=100), 'eprewmean': deque(maxlen=100)}
     start_ts = time.time()
@@ -103,20 +106,19 @@ def learn(logger,
             else:
                 with torch.no_grad():
                     b_dist_ = qtar(b_o_).exp()
-                    delta_z = float(max_value - min_value) / (atom_num - 1)
-                    z_i = torch.linspace(min_value, max_value, atom_num)
                     b_a_ = (b_dist_ * z_i).sum(-1).argmax(1)
                     b_tzj = (gamma * (1 - b_d) * z_i[None, :]
                              + b_r).clamp(min_value, max_value)
                     b_i = (b_tzj - min_value) / delta_z
                     b_l = b_i.floor()
                     b_u = b_i.ceil()
-                    b_m = torch.zeros(batch_size, atom_num)
+                    b_m = torch.zeros(batch_size, atom_num).to(device)
                     temp = b_dist_[torch.arange(batch_size), b_a_, :]
                     b_m.scatter_add_(1, b_l.long(), temp * (b_u - b_i))
                     b_m.scatter_add_(1, b_u.long(), temp * (b_i - b_l))
                 b_q = qnet(b_o)[torch.arange(batch_size), b_a.squeeze(1), :]
                 kl_error = -(b_q * b_m).sum(1)
+                # use kl error as priorities as proposed by Rainbow
                 priorities = kl_error.detach().cpu().clamp(1e-6).numpy()
                 loss = kl_error.mean()
 
