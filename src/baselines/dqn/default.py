@@ -1,4 +1,5 @@
 import torch.nn as nn
+from torch.nn.functional import log_softmax
 from torch.optim import Adam
 
 from common.util import Flatten
@@ -7,7 +8,8 @@ from common.util import Flatten
 def atari(env):
     in_dim = env.observation_space.shape
     policy_dim = env.action_space.n
-    network = CNN(in_dim, policy_dim, True)
+    atom_num = 51  # when atom number > 1, distributinal q estimator is used
+    network = CNN(in_dim, policy_dim, atom_num, dueling=True)
     optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
     return dict(
         network=network,
@@ -26,6 +28,9 @@ def atari(env):
         prioritized_replay_alpha=0.6,
         prioritized_replay_beta0=0.4,
         param_noise=False,
+        atom_num=atom_num,
+        min_value=-10,
+        max_value=10,
         ob_scale=1 / 255.0
     )
 
@@ -33,7 +38,8 @@ def atari(env):
 def classic_control(env):
     in_dim = env.observation_space.shape[0]
     policy_dim = env.action_space.n
-    network = MLP(in_dim, policy_dim, True)
+    atom_num = 1  # when atom number > 1, distributinal q estimator is used
+    network = MLP(in_dim, policy_dim, atom_num, dueling=True)
     optimizer = Adam(network.parameters(), 1e-3, eps=1e-5)
     return dict(
         network=network,
@@ -52,15 +58,19 @@ def classic_control(env):
         prioritized_replay_alpha=0.6,
         prioritized_replay_beta0=0.4,
         param_noise=False,
+        atom_num=atom_num,
+        min_value=-10,
+        max_value=10,
         ob_scale=1
     )
 
 
 class CNN(nn.Module):
-    def __init__(self, in_shape, out_dim, dueling):
+    def __init__(self, in_shape, out_dim, atom_num, dueling):
         super().__init__()
         c, h, w = in_shape
         cnn_out_dim = 64 * ((h - 28) // 8) * ((w - 28) // 8)
+        self.atom_num = atom_num
         self.feature = nn.Sequential(
             nn.Conv2d(c, 32, 8, 4),
             nn.ReLU(True),
@@ -74,13 +84,13 @@ class CNN(nn.Module):
         self.q = nn.Sequential(
             nn.Linear(cnn_out_dim, 256),
             nn.ReLU(True),
-            nn.Linear(256, out_dim)
+            nn.Linear(256, out_dim * atom_num)
         )
         if dueling:
             self.state = nn.Sequential(
                 nn.Linear(cnn_out_dim, 256),
                 nn.ReLU(True),
-                nn.Linear(256, 1)
+                nn.Linear(256, atom_num)
             )
 
         for _, m in self.named_modules():
@@ -89,16 +99,27 @@ class CNN(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
+        batch_size = x.size(0)
         latent = self.feature(x)
         qvalue = self.q(latent)
-        if hasattr(self, 'state'):
-            qvalue = self.state(latent) + qvalue - qvalue.mean(1, keepdim=True)
-        return qvalue
+        if self.atom_num == 1:
+            if hasattr(self, 'state'):
+                svalue = self.state(latent)
+                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
+            return qvalue
+        else:
+            if hasattr(self, 'state'):
+                qvalue = qvalue.view(batch_size, -1, self.atom_num)
+                svalue = self.state(latent).unsqueeze(1)
+                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
+            logprobs = log_softmax(qvalue, -1)
+            return logprobs
 
 
 class MLP(nn.Module):
-    def __init__(self, in_dim, out_dim, dueling):
+    def __init__(self, in_dim, out_dim, atom_num, dueling):
         super().__init__()
+        self.atom_num = atom_num
         self.feature = nn.Sequential(
             Flatten(),
             nn.Linear(in_dim, 64),
@@ -107,9 +128,9 @@ class MLP(nn.Module):
             nn.Tanh()
         )
 
-        self.q = nn.Linear(64, out_dim)
+        self.q = nn.Linear(64, out_dim * atom_num)
         if dueling:
-            self.state = nn.Linear(64, 1)
+            self.state = nn.Linear(64, atom_num)
 
         for _, m in self.named_modules():
             if isinstance(m, nn.Linear):
@@ -117,8 +138,18 @@ class MLP(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def forward(self, x):
+        batch_size = x.size(0)
         latent = self.feature(x)
         qvalue = self.q(latent)
-        if hasattr(self, 'state'):
-            qvalue = self.state(latent) + qvalue - qvalue.mean(1, keepdim=True)
-        return qvalue
+        if self.atom_num == 1:
+            if hasattr(self, 'state'):
+                svalue = self.state(latent)
+                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
+            return qvalue
+        else:
+            if hasattr(self, 'state'):
+                qvalue = qvalue.view(batch_size, -1, self.atom_num)
+                svalue = self.state(latent).unsqueeze(1)
+                qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
+            logprobs = log_softmax(qvalue, -1)
+            return logprobs
