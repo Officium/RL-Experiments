@@ -23,13 +23,14 @@ def atari(env, **kwargs):
         prioritized_replay_alpha=0.6,
         prioritized_replay_beta0=0.4,
         param_noise=False,
+        dueling=True,
         atom_num=51,
         min_value=-10,
         max_value=10,
         ob_scale=1 / 255.0
     )
     params.update(kwargs)
-    network = CNN(in_dim, policy_dim, params['atom_num'], dueling=True)
+    network = CNN(in_dim, policy_dim, params['atom_num'], params.pop('dueling'))
     optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
     params.update(network=network, optimizer=optimizer)
     return params
@@ -53,13 +54,14 @@ def classic_control(env, **kwargs):
         prioritized_replay_alpha=0.6,
         prioritized_replay_beta0=0.4,
         param_noise=False,
+        dueling=True,
         atom_num=1,
         min_value=-10,
         max_value=10,
         ob_scale=1
     )
     params.update(kwargs)
-    network = MLP(in_dim, policy_dim, params['atom_num'], dueling=True)
+    network = MLP(in_dim, policy_dim, params['atom_num'], params.pop('dueling'))
     optimizer = Adam(network.parameters(), 1e-3, eps=1e-5)
     params.update(network=network, optimizer=optimizer)
     return params
