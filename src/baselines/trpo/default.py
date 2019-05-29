@@ -6,13 +6,13 @@ from torch.optim import Adam
 from common.util import Flatten
 
 
-def atari(env):
+def atari(env, **kwargs):
     in_dim = env.observation_space.shape
     policy_dim = env.action_space.n
     policy = SMALLCNN(in_dim, policy_dim)
     value = SMALLCNN(in_dim, 1)
     optimizer = Adam(value.parameters(), 1e-4, eps=1e-5)
-    return dict(
+    params = dict(
         network=(policy, value),
         optimizer=optimizer,
         gamma=0.98,
@@ -25,15 +25,17 @@ def atari(env):
         entcoeff=0.00,
         ob_scale=1 / 255.0
     )
+    params.update(kwargs)
+    return params
 
 
-def classic_control(env):
+def classic_control(env, **kwargs):
     in_dim = env.observation_space.shape[0]
     policy_dim = env.action_space.n
     policy = MLP(in_dim, policy_dim)
     value = MLP(in_dim, 1)
     optimizer = Adam(value.parameters(), 1e-2, eps=1e-5)
-    return dict(
+    params = dict(
         network=(policy, value),
         optimizer=optimizer,
         gamma=0.98,
@@ -46,6 +48,8 @@ def classic_control(env):
         entcoeff=0.00,
         ob_scale=1
     )
+    params.update(kwargs)
+    return params
 
 
 class SMALLCNN(nn.Module):

@@ -79,14 +79,10 @@ def make_vec_env(env_id, env_type, nenv, seed, reward_scale, frame_stack=True):
     return env
 
 
-def get_algorithm_defaults(env, env_type, algorithm):
-    """ Get algorithm default hyper-parameters by env """
-    try:
-        module = get_algorithm_module(algorithm, 'default')
-        kwargs = getattr(module, env_type)(env)
-    except (ImportError, AttributeError):
-        kwargs = dict()
-    return kwargs
+def get_algorithm_parameters(env, env_type, algorithm, **kwargs):
+    """ Get algorithm hyper-parameters """
+    module = get_algorithm_module(algorithm, 'default')
+    return getattr(module, env_type)(env, **kwargs)
 
 
 def get_algorithm_module(algorithm, submodule):
@@ -106,19 +102,16 @@ def learn(env_id, algorithm, seed, **kwargs):
     env, kwargs = build_env(env_id, algorithm, env_type, seed, **kwargs)
 
     algorithm = algorithm.lower()
-    specific_options = get_algorithm_defaults(env, env_type, algorithm)
-    for k, v in kwargs.items():
-        if v is not None:
-            specific_options[k] = v
+    options = get_algorithm_parameters(env, env_type, algorithm, **kwargs)
     module = get_algorithm_module(algorithm, algorithm)
     s = '\n' + '-' * 60 + '\n'
-    option_repr = ''.join('{}{}: {}'.format(s, k, v.__repr__())
-                          for k, v in specific_options.items()) + s
+    option_repr = ''.join(
+        '{}{}: {}'.format(s, k, v.__repr__()) for k, v in options.items()) + s
     logger.info('Start training `{}` on `{}` with settings {}'
                 .format(algorithm, env, option_repr))
 
     try:
-        return getattr(module, 'learn')(logger, env=env, **specific_options)
+        getattr(module, 'learn')(logger, env=env, **options)
     except Exception as e:
         logger.critical('algorithm execute fail', exc_info=e)
 

@@ -4,18 +4,20 @@ import torch.nn as nn
 from torch.optim import Adam
 
 
-def classic_control(env):
+def classic_control(env, **kwargs):
     in_dim = env.observation_space.shape[0]
     policy_dim = env.action_space.n
     network = MLP(in_dim, policy_dim)
     optimizer = Adam(network.parameters(), 0.01, eps=1e-5)
-    return dict(
+    params = dict(
         network=network,
         optimizer=optimizer,
         gamma=0.99,
         timesteps_per_batch=100,
         ob_scale=1.0,
     )
+    params.update(kwargs)
+    return params
 
 
 class MLP(nn.Module):

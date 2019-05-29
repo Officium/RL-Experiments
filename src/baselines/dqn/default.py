@@ -5,15 +5,10 @@ from torch.optim import Adam
 from common.util import Flatten
 
 
-def atari(env):
+def atari(env, **kwargs):
     in_dim = env.observation_space.shape
     policy_dim = env.action_space.n
-    atom_num = 51  # when atom number > 1, distributinal q estimator is used
-    network = CNN(in_dim, policy_dim, atom_num, dueling=True)
-    optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
-    return dict(
-        network=network,
-        optimizer=optimizer,
+    params = dict(
         grad_norm=10,
         batch_size=32,
         double_q=True,
@@ -28,22 +23,22 @@ def atari(env):
         prioritized_replay_alpha=0.6,
         prioritized_replay_beta0=0.4,
         param_noise=False,
-        atom_num=atom_num,
+        atom_num=51,
         min_value=-10,
         max_value=10,
         ob_scale=1 / 255.0
     )
+    params.update(kwargs)
+    network = CNN(in_dim, policy_dim, params['atom_num'], dueling=True)
+    optimizer = Adam(network.parameters(), 1e-4, eps=1e-5)
+    params.update(network=network, optimizer=optimizer)
+    return params
 
 
-def classic_control(env):
+def classic_control(env, **kwargs):
     in_dim = env.observation_space.shape[0]
     policy_dim = env.action_space.n
-    atom_num = 1  # when atom number > 1, distributinal q estimator is used
-    network = MLP(in_dim, policy_dim, atom_num, dueling=True)
-    optimizer = Adam(network.parameters(), 1e-3, eps=1e-5)
-    return dict(
-        network=network,
-        optimizer=optimizer,
+    params = dict(
         grad_norm=10,
         batch_size=100,
         double_q=True,
@@ -58,11 +53,16 @@ def classic_control(env):
         prioritized_replay_alpha=0.6,
         prioritized_replay_beta0=0.4,
         param_noise=False,
-        atom_num=atom_num,
+        atom_num=1,
         min_value=-10,
         max_value=10,
         ob_scale=1
     )
+    params.update(kwargs)
+    network = MLP(in_dim, policy_dim, params['atom_num'], dueling=True)
+    optimizer = Adam(network.parameters(), 1e-3, eps=1e-5)
+    params.update(network=network, optimizer=optimizer)
+    return params
 
 
 class CNN(nn.Module):
