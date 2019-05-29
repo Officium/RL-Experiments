@@ -6,12 +6,12 @@ from torch.optim import Adam
 from common.util import Flatten
 
 
-def atari(env):
+def atari(env, **kwargs):
     in_dim = env.observation_space.shape
     policy_dim = env.action_space.n
     network = CNN(in_dim, policy_dim)
     optimizer = Adam(network.parameters(), 2.5e-4, eps=1e-5)
-    return dict(
+    params = dict(
         network=network,
         optimizer=optimizer,
         gamma=0.99,
@@ -25,14 +25,16 @@ def atari(env):
         cliprange=0.1,
         ob_scale=1.0 / 255
     )
+    params.update(kwargs)
+    return params
 
 
-def classic_control(env):
+def classic_control(env, **kwargs):
     in_dim = env.observation_space.shape[0]
     policy_dim = env.action_space.n
     network = MLP(in_dim, policy_dim)
     optimizer = Adam(network.parameters(), 1e-2, eps=1e-5)
-    return dict(
+    params = dict(
         network=network,
         optimizer=optimizer,
         gamma=0.99,
@@ -46,6 +48,8 @@ def classic_control(env):
         cliprange=0.2,
         ob_scale=1
     )
+    params.update(kwargs)
+    return params
 
 
 class CNN(nn.Module):
