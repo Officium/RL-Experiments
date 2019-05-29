@@ -110,8 +110,8 @@ class CNN(nn.Module):
                 qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
             return qvalue
         else:
+            qvalue = qvalue.view(batch_size, -1, self.atom_num)
             if hasattr(self, 'state'):
-                qvalue = qvalue.view(batch_size, -1, self.atom_num)
                 svalue = self.state(latent).unsqueeze(1)
                 qvalue = svalue + qvalue - qvalue.mean(1, keepdim=True)
             logprobs = log_softmax(qvalue, -1)
