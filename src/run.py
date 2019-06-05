@@ -11,7 +11,7 @@ from common.util import learn, parse_all_args
 print("""
     Notes:
         CUDA usage is depend on `CUDA_VISIBLE_DEVICES`;
-        Log will be recorded at ../logs/{algorithm}_{seed};
+        Log will be recorded at ../logs/{env}_{algorithm}_{seed}/ by default;
         If you need multi-gpu training or other nn specific features, please 
         modify the default.py file in corresponding algorithm folder.
 """)
@@ -31,6 +31,8 @@ parser.add_argument('--reward_scale', type=float, default=1.0)
 parser.add_argument('--save_path', type=str, default='../checkpoints')
 parser.add_argument('--save_interval', type=int, default=0,
                     help='save model every x steps (0 = disabled)')
+parser.add_argument('--log_path', type=str, default='../logs',
+                    help='save model every x steps (0 = disabled)')
 common_options, other_options = parse_all_args(parser)
 
 
@@ -45,6 +47,7 @@ model = learn(
     number_timesteps=int(common_options.number_timesteps),
     save_path=common_options.save_path,
     save_interval=common_options.save_interval,
+    log_path=common_options.log_path,
     algorithm=common_options.algorithm,
     reward_scale=common_options.reward_scale,
     **other_options

@@ -10,16 +10,15 @@ import os
 __all__ = ['init_logger']
 
 
-def init_logger(key):
-    log_dir = os.path.join(os.path.curdir, '..', 'logs')
+def init_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)
     log_level = logging.INFO
     log_format = '%(levelname)s %(asctime)s %(processName)s %(process)s' \
                  '| %(filename)s | [line:%(lineno)d] | %(message)s'
 
-    logger = logging.getLogger(key)
+    logger = logging.getLogger()
     logger.setLevel(log_level)
-    path = os.path.join(log_dir, key)
+    path = os.path.join(log_dir, 'main.log')
 
     # file handler (log file)
     log_handler = logging.handlers.RotatingFileHandler(filename=path)
@@ -32,3 +31,5 @@ def init_logger(key):
     log_handler.setLevel(log_level)
     log_handler.setFormatter(logging.Formatter(log_format))
     logger.addHandler(log_handler)
+
+    return logger

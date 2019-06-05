@@ -437,9 +437,10 @@ class SubprocVecEnv(object):
 
 
 class Monitor(gym.Wrapper):
-    def __init__(self, env):
+    def __init__(self, env, actor_log_path):
         super(Monitor, self).__init__(env)
         self._monitor_rewards = None
+        self._actor_log_path = actor_log_path
 
     def reset(self, **kwargs):
         self._monitor_rewards = []
@@ -452,5 +453,8 @@ class Monitor(gym.Wrapper):
             info['episode'] = {
                 'r': sum(self._monitor_rewards),
                 'l': len(self._monitor_rewards)}
+            with open(self._actor_log_path, 'a') as f:
+                f.write('{}\t{}\n'
+                        .format(info['episode']['r'], info['episode']['l']))
         return o_, r, done, info
 

@@ -3,6 +3,7 @@ Note that this file is a MPI-free version of
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
 import logging
+import os
 import random
 import re
 from functools import partial
@@ -25,31 +26,33 @@ for _env in gym.envs.registry.all():
     id2type[_env.id] = _env._entry_point.split(':')[0].rsplit('.', 1)[1]
 
 
-def build_env(env_id, algorithm, env_type, seed, **kwargs):
+def build_env(env_id, algorithm, env_type, seed, log_path, **kwargs):
     """ Build env based on options """
     assert env_type in {'atari', 'classic_control'}
     reward_scale = kwargs.pop('reward_scale')
     nenv = kwargs.pop('nenv') or cpu_count() // (1 + (platform == 'darwin'))
     stack = env_type == 'atari'
     if algorithm == 'dqn':
-        env = make_env(env_id, env_type, seed, reward_scale, stack)
+        env = make_env(env_id, env_type, seed, reward_scale, log_path, stack)
     else:
         if algorithm == 'trpo':
             nenv = 1
         kwargs['nenv'] = nenv
-        env = make_vec_env(env_id, env_type, nenv, seed, reward_scale, stack)
+        env = make_vec_env(
+            env_id, env_type, nenv, seed, reward_scale, log_path, stack)
 
     return env, kwargs
 
 
-def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
+def make_env(env_id, env_type, seed, reward_scale, log_path, frame_stack=False):
     """ Make env """
+    actor_log_path = os.path.join(log_path, 'actor.log.{}'.format(str(seed)))
     if env_type == 'atari':
         env = gym.make(env_id)
         assert 'NoFrameskip' in env.spec.id
         env = NoopResetEnv(env, noop_max=30)
         env = MaxAndSkipEnv(env, skip=4)
-        env = Monitor(env)
+        env = Monitor(env, actor_log_path)
         # deepmind wrap
         env = EpisodicLifeEnv(env)
         if 'FIRE' in env.unwrapped.get_action_meanings():
@@ -59,7 +62,7 @@ def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
         if frame_stack:
             env = FrameStack(env, 4)
     elif env_type == 'classic_control':
-        env = Monitor(gym.make(env_id))
+        env = Monitor(gym.make(env_id), actor_log_path)
     else:
         raise NotImplementedError
     if reward_scale != 1:
@@ -68,10 +71,11 @@ def make_env(env_id, env_type, seed, reward_scale, frame_stack=True):
     return env
 
 
-def make_vec_env(env_id, env_type, nenv, seed, reward_scale, frame_stack=True):
+def make_vec_env(env_id, env_type, nenv, seed,
+                 reward_scale, log_path, frame_stack=True):
     """ Make vectorized env """
     env = SubprocVecEnv([
-        partial(make_env, env_id, env_type, seed + i, reward_scale, False)
+        partial(make_env, env_id, env_type, seed + i, reward_scale, log_path)
         for i in range(nenv)
     ])
     if frame_stack:
@@ -90,16 +94,17 @@ def get_algorithm_module(algorithm, submodule):
     return import_module('.'.join(['baselines', algorithm, submodule]))
 
 
-def learn(env_id, algorithm, seed, **kwargs):
+def learn(env_id, algorithm, seed, log_path, **kwargs):
     """ Learn entry """
-    key = '{}_{}_{}'.format(env_id, algorithm, seed)
-    init_logger(key)
-    logger = logging.getLogger(key)
+    sub_folder = '{}_{}_{}'.format(env_id, algorithm, seed)
+    log_path = os.path.join(log_path, sub_folder)
+    logger = init_logger(log_path)
 
     set_global_seeds(seed)
 
     env_type = id2type[env_id]
-    env, kwargs = build_env(env_id, algorithm, env_type, seed, **kwargs)
+    env, kwargs = build_env(env_id, algorithm,
+                            env_type, seed, log_path, **kwargs)
 
     algorithm = algorithm.lower()
     options = get_algorithm_parameters(env, env_type, algorithm, **kwargs)

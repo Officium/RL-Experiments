@@ -8,6 +8,20 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
+def smooth(y, radius=100, mode='two_sided'):
+    if len(y) < 2*radius+1:
+        return np.ones_like(y) * y.mean()
+    elif mode == 'two_sided':
+        convkernel = np.ones(2 * radius+1)
+        return np.convolve(y, convkernel, mode='same') / \
+               np.convolve(np.ones_like(y), convkernel, mode='same')
+    elif mode == 'causal':
+        convkernel = np.ones(radius)
+        out = np.convolve(y, convkernel,mode='full') / \
+              np.convolve(np.ones_like(y), convkernel, mode='full')
+        return out[:-radius+1]
+
+
 xscale = {
     'ppo': 1024 * 4,  # 1024 timesteps/log, 4 skipped frames/observation
     'trpo': 2048 * 4,
