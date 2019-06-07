@@ -16,7 +16,7 @@ def init_logger(log_dir):
     log_format = '%(levelname)s %(asctime)s %(processName)s %(process)s' \
                  '| %(filename)s | [line:%(lineno)d] | %(message)s'
 
-    logger = logging.getLogger()
+    logger = logging.getLogger(log_dir)
     logger.setLevel(log_level)
     path = os.path.join(log_dir, 'main.log')
 
