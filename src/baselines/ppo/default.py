@@ -2,7 +2,9 @@ import math
 
 import torch.nn as nn
 from torch.optim import Adam
+from gym import spaces
 
+from common.distributions import *
 from common.util import Flatten
 
 
@@ -12,6 +14,7 @@ def atari(env, **kwargs):
     network = CNN(in_dim, policy_dim)
     optimizer = Adam(network.parameters(), 2.5e-4, eps=1e-5)
     params = dict(
+        dist=Categorical,
         network=network,
         optimizer=optimizer,
         gamma=0.99,
@@ -31,17 +34,25 @@ def atari(env, **kwargs):
 
 def classic_control(env, **kwargs):
     in_dim = env.observation_space.shape[0]
-    policy_dim = env.action_space.n
+    if isinstance(env.action_space, spaces.Box):
+        dist = DiagGaussian
+        policy_dim = env.action_space.shape[0] * 2
+    elif isinstance(env.action_space, spaces.Discrete):
+        dist = Categorical
+        policy_dim = env.action_space.n
+    else:
+        raise ValueError
     network = MLP(in_dim, policy_dim)
-    optimizer = Adam(network.parameters(), 1e-2, eps=1e-5)
+    optimizer = Adam(network.parameters(), 3e-4, eps=1e-5)
     params = dict(
+        dist=dist,
         network=network,
         optimizer=optimizer,
         gamma=0.99,
         grad_norm=0.5,
         timesteps_per_batch=2048,
         ent_coef=0,
-        vf_coef=0.001,
+        vf_coef=0.5,
         gae_lam=0.95,
         nminibatches=4,
         opt_iter=4,
@@ -50,6 +61,10 @@ def classic_control(env, **kwargs):
     )
     params.update(kwargs)
     return params
+
+
+def box2d(env, **kwargs):
+    return classic_control(env, **kwargs)
 
 
 class CNN(nn.Module):

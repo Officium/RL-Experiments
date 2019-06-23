@@ -4,7 +4,6 @@ from collections import deque
 from itertools import chain
 
 import torch
-import torch.distributions
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data import DataLoader
@@ -14,7 +13,7 @@ from common.util import scale_ob, Trajectories
 
 def learn(logger,
           device,
-          env, nenv,
+          env, nenv, dist,
           number_timesteps,
           network, optimizer,
           save_path, save_interval, ob_scale,
@@ -37,13 +36,11 @@ def learn(logger,
     cliprange (float): clipping range
 
     """
-    logger.warning('This implementation of ppo only '
-                   'support discrete action spaces now!')
 
     policy = network.to(device)
     number_timesteps = number_timesteps // nenv
     generator = _generate(
-        device, env, policy, ob_scale,
+        device, env, dist, policy, ob_scale,
         number_timesteps, gamma, gae_lam, timesteps_per_batch
     )
     max_iter = number_timesteps // timesteps_per_batch
@@ -69,9 +66,9 @@ def learn(logger,
                 # calculate advantange
                 b_logits, b_v = policy(b_o)
                 b_v = b_v[:, 0]
-                dist = torch.distributions.Categorical(logits=b_logits)
-                entropy = dist.entropy().mean()
-                b_logp = dist.log_prob(b_a)
+                pd = dist(b_logits)
+                entropy = pd.entropy().mean()
+                b_logp = pd.log_prob(b_a)
                 # highlight: normalized advantage will gives better performance
                 adv = b_r - b_v_old
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
@@ -113,7 +110,7 @@ def learn(logger,
                        os.path.join(save_path, '{}.{}'.format(name, n_iter)))
 
 
-def _generate(device, env, policy, ob_scale,
+def _generate(device, env, dist, policy, ob_scale,
               number_timesteps, gamma, gae_lam, timesteps_per_batch):
     """ Generate trajectories """
     record = ['o', 'a', 'r', 'done', 'logp', 'vpred']
@@ -127,9 +124,9 @@ def _generate(device, env, policy, ob_scale,
         # sample action
         with torch.no_grad():
             logits, v = policy(scale_ob(o, device, ob_scale))
-            dist = torch.distributions.Categorical(logits=logits)
-            a = dist.sample()
-            logp = dist.log_prob(a).cpu().numpy()
+            pd = dist(logits)
+            a = pd.sample()
+            logp = pd.log_prob(a).cpu().numpy()
             a = a.cpu().numpy()
             v = v.cpu().numpy()[:, 0]
 

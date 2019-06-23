@@ -28,7 +28,7 @@ for _env in gym.envs.registry.all():
 
 def build_env(env_id, algorithm, env_type, seed, log_path, **kwargs):
     """ Build env based on options """
-    assert env_type in {'atari', 'classic_control'}
+    assert env_type in {'atari', 'classic_control', 'box2d'}
     reward_scale = kwargs.pop('reward_scale')
     nenv = kwargs.pop('nenv') or cpu_count() // (1 + (platform == 'darwin'))
     stack = env_type == 'atari'
@@ -61,7 +61,7 @@ def make_env(env_id, env_type, seed, reward_scale, log_path, frame_stack=False):
         env = ClipRewardEnv(env)
         if frame_stack:
             env = FrameStack(env, 4)
-    elif env_type == 'classic_control':
+    elif env_type in {'classic_control', 'box2d'}:
         env = Monitor(gym.make(env_id), actor_log_path)
     else:
         raise NotImplementedError
@@ -183,8 +183,6 @@ class Trajectories(object):
     def append(self, *records):
         assert len(records) == len(self._keys)
         for key, record in zip(self._keys, records):
-            if key != 'o':
-                assert len(record.shape) == 1
             if key == 'done':
                 record = record.astype(int)
                 self._offsets['done'].append(record)
@@ -222,9 +220,8 @@ class Trajectories(object):
         # convert to tensor
         res = []
         for key in self._export_keys:
-            dtype = np.long if key == 'a' else np.float32
             shape = (n * nenv, ) + self._records[key][0].shape[1:]
-            data = np.asarray(self._records[key], dtype).reshape(shape)
+            data = np.asarray(self._records[key], np.float32).reshape(shape)
             tensor = torch.from_numpy(data).to(self._device)
             if key == 'o':
                 tensor.mul_(self._ob_scale)
