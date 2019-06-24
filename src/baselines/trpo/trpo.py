@@ -144,7 +144,7 @@ def learn(logger,
             logger.info('{}: {:.6f}'.format(k, v))
         if save_interval and n_iter % save_interval == 0:
             torch.save([policy.state_dict(), optimizer.state_dict()],
-                       os.path.join(save_path, '{}.{}'.format(name, n_iter)))
+                       os.path.join(save_path, '{}.checkpoint'.format(n_iter)))
 
 
 def _generate(device, env, policy, value, ob_scale,

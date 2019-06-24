@@ -144,7 +144,7 @@ def learn(logger,
 
         if save_interval and n_iter % save_interval == 0:
             torch.save([qnet.state_dict(), optimizer.state_dict()],
-                       os.path.join(save_path, '{}.{}'.format(name, n_iter)))
+                       os.path.join(save_path, '{}.checkpoint'.format(n_iter)))
 
 
 def _generate(device, env, qnet, ob_scale,
