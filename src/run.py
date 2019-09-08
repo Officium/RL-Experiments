@@ -25,6 +25,8 @@ parser = argparse.ArgumentParser(
 parser.add_argument('--env', type=str, required=True, help='environment ID')
 parser.add_argument('--algorithm', type=str, required=True, help='Algorithm')
 parser.add_argument('--nenv', type=int, default=0, help='parrallel number')
+parser.add_argument('--env_type', type=str, required=True,
+                    help='type of env: atari | classic_control | box2d')
 parser.add_argument('--seed', type=int, default=0, help='random seed')
 parser.add_argument('--number_timesteps', type=float, default=1e6)
 parser.add_argument('--reward_scale', type=float, default=1.0)
@@ -43,6 +45,7 @@ model = learn(
     device=device,
     env_id=common_options.env,
     nenv=common_options.nenv,
+    env_type=common_options.env_type,
     seed=common_options.seed,
     number_timesteps=int(common_options.number_timesteps),
     save_path=common_options.save_path,

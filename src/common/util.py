@@ -2,7 +2,6 @@
 Note that this file is a MPI-free version of
 `https://github.com/openai/baselines/blob/master/baselines/common/*_util.py`
 """
-import logging
 import os
 import random
 import re
@@ -18,12 +17,6 @@ import torch.nn as nn
 
 from common.logger import init_logger
 from common.wrappers import *
-
-
-# env_id -> env_type
-id2type = dict()
-for _env in gym.envs.registry.all():
-    id2type[_env.id] = _env._entry_point.split(':')[0].rsplit('.', 1)[1]
 
 
 def build_env(env_id, algorithm, env_type, seed, log_path, **kwargs):
@@ -94,7 +87,7 @@ def get_algorithm_module(algorithm, submodule):
     return import_module('.'.join(['baselines', algorithm, submodule]))
 
 
-def learn(env_id, algorithm, seed, log_path, **kwargs):
+def learn(env_id, algorithm, env_type, seed, log_path, **kwargs):
     """ Learn entry """
     sub_folder = '{}_{}_{}'.format(env_id, algorithm, seed)
     log_path = os.path.join(log_path, sub_folder)
@@ -102,7 +95,6 @@ def learn(env_id, algorithm, seed, log_path, **kwargs):
 
     set_global_seeds(seed)
 
-    env_type = id2type[env_id]
     env, kwargs = build_env(env_id, algorithm,
                             env_type, seed, log_path, **kwargs)
 

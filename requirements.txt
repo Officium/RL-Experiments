@@ -1,5 +1,4 @@
-gym==0.12.1
-gym[atari]==0.1.7
+gym[atari]==0.14.0
 numpy==1.16.2
 pytorch==1.0.1
 opencv-python==4.1.0.25
