@@ -66,7 +66,7 @@ Devices:
 ```bash
 git clone https://github.com/Officium/RL-Experiments.git
 cd RL-Experiments/src
-python run.py --env=CartPole-v1 --algorithm=dqn --number_timesteps=1e5
+python run.py --env=CartPole-v1 --env_type=classic_control --algorithm=dqn --number_timesteps=1e5
 ```
 
 
